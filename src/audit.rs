@@ -135,31 +135,27 @@ pub enum AuditLogAction {
 }
 
 #[derive(Debug, Serialize)]
-#[serde(tag = "type", rename_all = "kebab-case")]
 pub struct ExecCommandEvent {
     pub args: Box<[String]>,
 }
 
 #[derive(Debug, Serialize)]
-#[serde(tag = "type", rename_all = "kebab-case")]
 pub struct WindowAdjustedEvent {
     pub new_size: usize,
 }
 
 #[derive(Debug, Serialize)]
-#[serde(tag = "type", rename_all = "kebab-case")]
 pub struct SubsystemRequestEvent {
     pub name: Box<str>,
 }
 
 #[derive(Debug, Serialize)]
-#[serde(tag = "type", rename_all = "kebab-case")]
 pub struct SignalEvent {
     pub name: Box<str>,
 }
 
 #[derive(Debug, Serialize)]
-#[serde(tag = "type", rename_all = "kebab-case")]
+#[serde(tag = "credential-type", rename_all = "kebab-case")]
 pub enum LoginAttemptEvent {
     UsernamePassword {
         username: Box<str>,
