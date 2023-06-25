@@ -1,0 +1,10 @@
+# Address for the server to listen on.
+listen-address = "127.0.0.1:2233"
+
+# The probability that an authentication attempt will succeed, once a given password
+# has been accepted once - it will be accepted for the rest of the lifetime of the
+# instance.
+access-probability = 0.2
+
+# Path of the file to write audit logs to.
+audit-output-file = "audit.jsonl"
