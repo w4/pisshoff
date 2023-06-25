@@ -7,6 +7,7 @@ use std::{
     sync::Arc,
     time::{Duration, Instant},
 };
+use time::OffsetDateTime;
 use tokio::{
     fs::OpenOptions,
     io::{AsyncWriteExt, BufWriter},
@@ -66,6 +67,8 @@ pub fn start_audit_writer(
 #[derive(Serialize)]
 pub struct AuditLog {
     pub connection_id: Uuid,
+    #[serde(with = "time::serde::rfc3339")]
+    pub ts: OffsetDateTime,
     pub peer_address: Option<SocketAddr>,
     pub environment_variables: Vec<(Box<str>, Box<str>)>,
     pub events: Vec<AuditLogEvent>,
@@ -77,6 +80,7 @@ impl Default for AuditLog {
     fn default() -> Self {
         Self {
             connection_id: Uuid::default(),
+            ts: OffsetDateTime::now_utc(),
             peer_address: None,
             environment_variables: vec![],
             events: vec![],
