@@ -6,7 +6,10 @@ use clap::Parser;
 use futures::FutureExt;
 use std::sync::Arc;
 use thrussh::MethodSet;
-use tokio::{signal::unix::SignalKind, sync::watch};
+use tokio::{
+    signal::unix::SignalKind,
+    sync::{oneshot, watch},
+};
 use tracing::{error, info};
 use tracing_subscriber::EnvFilter;
 
@@ -49,29 +52,40 @@ async fn run() -> anyhow::Result<()> {
     });
 
     let (reload_send, reload_recv) = watch::channel(());
+    let (shutdown_send, shutdown_recv) = oneshot::channel();
 
-    let (audit_send, audit_handle) = audit::start_audit_writer(args.config.clone(), reload_recv);
+    let (audit_send, audit_handle) =
+        audit::start_audit_writer(args.config.clone(), reload_recv, shutdown_recv);
     let mut audit_handle = audit_handle.fuse();
 
     let server = Server::new(args.config.clone(), audit_send);
     let listen_address = args.config.listen_address.to_string();
 
+    // TODO: needs clean shutdowns on clients
     let fut = thrussh::server::run(thrussh_config, &listen_address, server);
 
+    let shutdown_watcher = watch_for_shutdown(shutdown_send);
     let reload_watcher = watch_for_reloads(reload_send);
 
     tokio::select! {
         res = fut => res?,
         res = &mut audit_handle => res??,
+        res = shutdown_watcher => res?,
         res = reload_watcher => res?,
-        _ = tokio::signal::ctrl_c() => {
-            info!("Received ctrl-c, initiating shutdown");
-        }
     }
 
     info!("Finishing audit log writes");
     audit_handle.await??;
     info!("Audit log writes finished");
+
+    Ok(())
+}
+
+async fn watch_for_shutdown(send: oneshot::Sender<()>) -> Result<(), anyhow::Error> {
+    tokio::signal::ctrl_c().await?;
+    info!("Received ctrl-c, initiating shutdown");
+
+    let _res = send.send(());
 
     Ok(())
 }

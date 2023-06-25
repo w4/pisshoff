@@ -11,7 +11,7 @@ use time::OffsetDateTime;
 use tokio::{
     fs::OpenOptions,
     io::{AsyncWriteExt, BufWriter},
-    sync::watch,
+    sync::{oneshot, watch},
     task::JoinHandle,
 };
 use tracing::{debug, info};
@@ -20,6 +20,7 @@ use uuid::Uuid;
 pub fn start_audit_writer(
     config: Arc<Config>,
     mut reload: watch::Receiver<()>,
+    mut shutdown_recv: oneshot::Receiver<()>,
 ) -> (
     tokio::sync::mpsc::UnboundedSender<AuditLog>,
     JoinHandle<Result<(), std::io::Error>>,
@@ -39,9 +40,9 @@ pub fn start_audit_writer(
         let mut writer = open_writer().await?;
         let mut shutdown = false;
 
-        loop {
+        while !shutdown {
             tokio::select! {
-                log = recv.recv(), if !shutdown => {
+                log = recv.recv() => {
                     match log {
                         Some(log) => {
                             let log = serde_json::to_vec(&log)
@@ -54,11 +55,14 @@ pub fn start_audit_writer(
                         }
                     }
                 }
-                _ = tokio::time::sleep(Duration::from_secs(5)), if !writer.buffer().is_empty() && !shutdown => {
+                _ = &mut shutdown_recv => {
+                    shutdown = true;
+                }
+                _ = tokio::time::sleep(Duration::from_secs(5)), if !writer.buffer().is_empty() => {
                     debug!("Flushing audits to disk");
                     writer.flush().await?;
                 }
-                Ok(()) = reload.changed(), if !shutdown => {
+                Ok(()) = reload.changed() => {
                     info!("Flushing audits to disk");
                     writer.flush().await?;
 
