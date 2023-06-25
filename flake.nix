@@ -40,16 +40,6 @@
             };
 
             config = mkIf cfg.enable {
-              systemd.sockets.pisshoff = {
-                wantedBy = [ "sockets.target" ];
-
-                socketConfig = {
-                  ListenStream = 22;
-                  BindIPv6Only = "both";
-                  Accept = "no";
-                };
-              };
-
               systemd.services.pisshoff = {
                 enable = true;
                 wantedBy = [ "multi-user.target" ];

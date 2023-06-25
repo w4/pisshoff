@@ -1,14 +1,18 @@
 use crate::config::Config;
 use serde::Serialize;
-use std::io::ErrorKind;
-use std::sync::Arc;
 use std::{
     fmt::{Debug, Formatter},
+    io::ErrorKind,
     net::SocketAddr,
+    sync::Arc,
     time::{Duration, Instant},
 };
-use tokio::io::{AsyncWriteExt, BufWriter};
-use tokio::{fs::OpenOptions, task::JoinHandle};
+use tokio::{
+    fs::OpenOptions,
+    io::{AsyncWriteExt, BufWriter},
+    task::JoinHandle,
+};
+use tracing::debug;
 use uuid::Uuid;
 
 pub fn start_audit_writer(
@@ -26,11 +30,28 @@ pub fn start_audit_writer(
             .open(&config.audit_output_file)
             .await?;
         let mut writer = BufWriter::new(file);
+        let mut shutdown = false;
 
-        while let Some(log) = recv.recv().await {
-            let log =
-                serde_json::to_vec(&log).map_err(|e| std::io::Error::new(ErrorKind::Other, e))?;
-            writer.write_all(&log).await?;
+        loop {
+            tokio::select! {
+                log = recv.recv(), if !shutdown => {
+                    match log {
+                        Some(log) => {
+                            let log = serde_json::to_vec(&log)
+                                .map_err(|e| std::io::Error::new(ErrorKind::Other, e))?;
+                            writer.write_all(&log).await?;
+                        }
+                        None => {
+                            shutdown = true;
+                        }
+                    }
+                }
+                _ = tokio::time::sleep(Duration::from_secs(5)), if !writer.buffer().is_empty() && !shutdown => {
+                    debug!("Flushing audits to disk");
+                    writer.flush().await?;
+                }
+                else => break,
+            }
         }
 
         writer.flush().await?;
