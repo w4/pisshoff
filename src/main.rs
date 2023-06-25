@@ -45,6 +45,7 @@ async fn run() -> anyhow::Result<()> {
     let keys = vec![thrussh_keys::key::KeyPair::generate_ed25519().unwrap()];
 
     let thrussh_config = Arc::new(thrussh::server::Config {
+        server_id: args.config.server_id.to_string(),
         methods: MethodSet::PASSWORD | MethodSet::PUBLICKEY | MethodSet::KEYBOARD_INTERACTIVE,
         keys,
         auth_rejection_time: std::time::Duration::from_secs(1),
