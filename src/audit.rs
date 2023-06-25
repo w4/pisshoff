@@ -70,6 +70,7 @@ pub struct AuditLog {
     #[serde(with = "time::serde::rfc3339")]
     pub ts: OffsetDateTime,
     pub peer_address: Option<SocketAddr>,
+    #[serde(skip_serializing_if = "Vec::is_empty")]
     pub environment_variables: Vec<(Box<str>, Box<str>)>,
     pub events: Vec<AuditLogEvent>,
     #[serde(skip)]
