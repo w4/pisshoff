@@ -6,6 +6,7 @@ use clap::Parser;
 use futures::FutureExt;
 use std::sync::Arc;
 use thrussh::MethodSet;
+use tokio::{signal::unix::SignalKind, sync::watch};
 use tracing::{error, info};
 use tracing_subscriber::EnvFilter;
 
@@ -47,7 +48,9 @@ async fn run() -> anyhow::Result<()> {
         ..thrussh::server::Config::default()
     });
 
-    let (audit_send, audit_handle) = audit::start_audit_writer(args.config.clone());
+    let (reload_send, reload_recv) = watch::channel(());
+
+    let (audit_send, audit_handle) = audit::start_audit_writer(args.config.clone(), reload_recv);
     let mut audit_handle = audit_handle.fuse();
 
     let server = Server::new(args.config.clone(), audit_send);
@@ -55,9 +58,12 @@ async fn run() -> anyhow::Result<()> {
 
     let fut = thrussh::server::run(thrussh_config, &listen_address, server);
 
+    let reload_watcher = watch_for_reloads(reload_send);
+
     tokio::select! {
         res = fut => res?,
         res = &mut audit_handle => res??,
+        res = reload_watcher => res?,
         _ = tokio::signal::ctrl_c() => {
             info!("Received ctrl-c, initiating shutdown");
         }
@@ -66,6 +72,17 @@ async fn run() -> anyhow::Result<()> {
     info!("Finishing audit log writes");
     audit_handle.await??;
     info!("Audit log writes finished");
+
+    Ok(())
+}
+
+async fn watch_for_reloads(send: watch::Sender<()>) -> Result<(), anyhow::Error> {
+    let mut signal = tokio::signal::unix::signal(SignalKind::hangup())?;
+
+    while let Some(()) = signal.recv().await {
+        info!("Received SIGHUP, broadcasting reload");
+        let _res = send.send(());
+    }
 
     Ok(())
 }

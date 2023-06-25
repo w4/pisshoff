@@ -52,6 +52,7 @@
                   {
                     Type = "exec";
                     ExecStart = "${self.defaultPackage."${system}"}/bin/pisshoff -c \"${conf}\"";
+                    ExecReload = "${pkgs.coreutils}/bin/kill -HUP $MAINPID";
                     Restart = "on-failure";
 
                     LogsDirectory = "pisshoff";
@@ -81,6 +82,17 @@
                     RestrictAddressFamilies = [ "AF_INET" "AF_INET6" ];
                     SystemCallFilter = [ "@system-service" "~@privileged" ];
                   };
+              };
+
+              services.logrotate.settings.pisshoff = {
+                files = "/var/log/pisshoff/audit.log";
+                rotate = 31;
+                frequency = "daily";
+                compress = true;
+                delaycompress = true;
+                missingok = true;
+                notifempty = true;
+                postrotate = "systemctl reload pisshoff";
               };
             };
           };

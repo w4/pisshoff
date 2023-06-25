@@ -11,13 +11,15 @@ use time::OffsetDateTime;
 use tokio::{
     fs::OpenOptions,
     io::{AsyncWriteExt, BufWriter},
+    sync::watch,
     task::JoinHandle,
 };
-use tracing::debug;
+use tracing::{debug, info};
 use uuid::Uuid;
 
 pub fn start_audit_writer(
     config: Arc<Config>,
+    mut reload: watch::Receiver<()>,
 ) -> (
     tokio::sync::mpsc::UnboundedSender<AuditLog>,
     JoinHandle<Result<(), std::io::Error>>,
@@ -25,12 +27,16 @@ pub fn start_audit_writer(
     let (send, mut recv) = tokio::sync::mpsc::unbounded_channel();
 
     let handle = tokio::spawn(async move {
-        let file = OpenOptions::default()
-            .create(true)
-            .append(true)
-            .open(&config.audit_output_file)
-            .await?;
-        let mut writer = BufWriter::new(file);
+        let open_writer = || async {
+            let file = OpenOptions::default()
+                .create(true)
+                .append(true)
+                .open(&config.audit_output_file)
+                .await?;
+            Ok::<_, std::io::Error>(BufWriter::new(file))
+        };
+
+        let mut writer = open_writer().await?;
         let mut shutdown = false;
 
         loop {
@@ -51,6 +57,15 @@ pub fn start_audit_writer(
                 _ = tokio::time::sleep(Duration::from_secs(5)), if !writer.buffer().is_empty() && !shutdown => {
                     debug!("Flushing audits to disk");
                     writer.flush().await?;
+                }
+                Ok(()) = reload.changed(), if !shutdown => {
+                    info!("Flushing audits to disk");
+                    writer.flush().await?;
+
+                    info!("Reopening handle to log file");
+                    writer = open_writer().await?;
+
+                    info!("Successfully re-opened log file");
                 }
                 else => break,
             }
