@@ -40,6 +40,7 @@ pub fn start_audit_writer(
                             let log = serde_json::to_vec(&log)
                                 .map_err(|e| std::io::Error::new(ErrorKind::Other, e))?;
                             writer.write_all(&log).await?;
+                            writer.write_all("\n".as_bytes()).await?;
                         }
                         None => {
                             shutdown = true;
