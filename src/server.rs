@@ -29,7 +29,7 @@ use thrussh::{
 };
 use thrussh_keys::key::PublicKey;
 use tokio::sync::mpsc::UnboundedSender;
-use tracing::{error, info, info_span, instrument::Instrumented, Instrument, Span};
+use tracing::{debug, error, info, info_span, instrument::Instrumented, Instrument, Span};
 
 pub static KEYBOARD_INTERACTIVE_PROMPT: &[(Cow<'static, str>, bool)] =
     &[(Cow::Borrowed("Password: "), false)];
@@ -154,11 +154,7 @@ impl thrussh::server::Handler for Connection {
         let res = if self.try_login(user, password) {
             Auth::Accept
         } else {
-            Auth::Partial {
-                name: "".into(),
-                instructions: "".into(),
-                prompts: KEYBOARD_INTERACTIVE_PROMPT.into(),
-            }
+            Auth::Reject
         };
 
         self.finished_auth(res)
@@ -183,36 +179,33 @@ impl thrussh::server::Handler for Connection {
     }
 
     fn auth_keyboard_interactive(
-        self,
-        _user: &str,
+        mut self,
+        user: &str,
         _submethods: &str,
-        _response: Option<Response>,
+        mut response: Option<Response>,
     ) -> Self::FutureAuth {
-        let span = info_span!(parent: &self.span, "auth_publickey");
+        let span = info_span!(parent: &self.span, "auth_keyboard_interactive");
         let _entered = span.enter();
 
-        let result = Auth::Reject;
+        let result = if let Some(password) = response
+            .as_mut()
+            .and_then(Response::next)
+            .map(String::from_utf8_lossy)
+        {
+            if self.try_login(user, password.as_ref()) {
+                Auth::Accept
+            } else {
+                Auth::Reject
+            }
+        } else {
+            debug!("Client is attempting keyboard-interactive, obliging");
 
-        // TODO: why doesn't this work
-        // let result = if let Some(password) = response
-        //     .as_mut()
-        //     .and_then(Response::next)
-        //     .map(String::from_utf8_lossy)
-        // {
-        //     if self.try_login(user, password.as_ref()) {
-        //         Auth::Accept
-        //     } else {
-        //         Auth::Reject
-        //     }
-        // } else {
-        //     debug!("Client is attempting keyboard-interactive, obliging");
-        //
-        //     Auth::Partial {
-        //         name: "".into(),
-        //         instructions: "".into(),
-        //         prompts: KEYBOARD_INTERACTIVE_PROMPT.into(),
-        //     }
-        // };
+            Auth::Partial {
+                name: "".into(),
+                instructions: "".into(),
+                prompts: KEYBOARD_INTERACTIVE_PROMPT.into(),
+            }
+        };
 
         self.finished_auth(result)
     }
@@ -220,8 +213,6 @@ impl thrussh::server::Handler for Connection {
     fn channel_close(self, channel: ChannelId, mut session: Session) -> Self::FutureUnit {
         let span = info_span!(parent: &self.span, "channel_close");
         let _entered = span.enter();
-
-        info!("In here");
 
         session.channel_success(channel);
         self.finished(session).boxed().wrap(Span::current())
@@ -240,8 +231,6 @@ impl thrussh::server::Handler for Connection {
     fn channel_open_session(self, channel: ChannelId, mut session: Session) -> Self::FutureUnit {
         let span = info_span!(parent: &self.span, "channel_open_session");
         let _entered = span.enter();
-
-        info!("In here");
 
         session.channel_success(channel);
         self.finished(session).boxed().wrap(Span::current())
