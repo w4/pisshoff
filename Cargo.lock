@@ -1524,7 +1524,7 @@ dependencies = [
 [[package]]
 name = "thrussh"
 version = "0.34.0"
-source = "git+ssh://git@github.com/JordanForks/thrussh#5b7232db70817c3519d191d1c4440da933f28563"
+source = "git+https://github.com/JordanForks/thrussh#5b7232db70817c3519d191d1c4440da933f28563"
 dependencies = [
  "bitflags",
  "byteorder",
@@ -1545,7 +1545,7 @@ dependencies = [
 [[package]]
 name = "thrussh-keys"
 version = "0.22.1"
-source = "git+ssh://git@github.com/JordanForks/thrussh#5b7232db70817c3519d191d1c4440da933f28563"
+source = "git+https://github.com/JordanForks/thrussh#5b7232db70817c3519d191d1c4440da933f28563"
 dependencies = [
  "aes",
  "bcrypt-pbkdf",

@@ -6,5 +6,5 @@ members = [
 ]
 
 [patch."crates-io"]
-thrussh = { git = "ssh://git@github.com/JordanForks/thrussh" }
-thrussh-keys = { git = "ssh://git@github.com/JordanForks/thrussh" }
+thrussh = { git = "https://github.com/JordanForks/thrussh" }
+thrussh-keys = { git = "https://github.com/JordanForks/thrussh" }
