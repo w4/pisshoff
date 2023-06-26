@@ -1,0 +1,7 @@
+socket-path = "test.sock"
+
+[pg]
+user = "postgres"
+dbname = "pisshoff"
+host = "127.0.0.1"
+port = 64601

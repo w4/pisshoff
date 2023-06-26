@@ -1,98 +1,25 @@
-use crate::config::Config;
-use serde::Serialize;
+use serde::{Deserialize, Serialize};
+use std::borrow::Cow;
 use std::{
     fmt::{Debug, Formatter},
-    io::ErrorKind,
     net::SocketAddr,
-    sync::Arc,
     time::{Duration, Instant},
 };
+use strum::IntoStaticStr;
 use time::OffsetDateTime;
-use tokio::{
-    fs::OpenOptions,
-    io::{AsyncWriteExt, BufWriter},
-    sync::{oneshot, watch},
-    task::JoinHandle,
-};
-use tracing::{debug, info};
 use uuid::Uuid;
 
-pub fn start_audit_writer(
-    config: Arc<Config>,
-    mut reload: watch::Receiver<()>,
-    mut shutdown_recv: oneshot::Receiver<()>,
-) -> (
-    tokio::sync::mpsc::UnboundedSender<AuditLog>,
-    JoinHandle<Result<(), std::io::Error>>,
-) {
-    let (send, mut recv) = tokio::sync::mpsc::unbounded_channel();
-
-    let handle = tokio::spawn(async move {
-        let open_writer = || async {
-            let file = OpenOptions::default()
-                .create(true)
-                .append(true)
-                .open(&config.audit_output_file)
-                .await?;
-            Ok::<_, std::io::Error>(BufWriter::new(file))
-        };
-
-        let mut writer = open_writer().await?;
-        let mut shutdown = false;
-
-        while !shutdown {
-            tokio::select! {
-                log = recv.recv() => {
-                    match log {
-                        Some(log) => {
-                            let log = serde_json::to_vec(&log)
-                                .map_err(|e| std::io::Error::new(ErrorKind::Other, e))?;
-                            writer.write_all(&log).await?;
-                            writer.write_all("\n".as_bytes()).await?;
-                        }
-                        None => {
-                            shutdown = true;
-                        }
-                    }
-                }
-                _ = &mut shutdown_recv => {
-                    shutdown = true;
-                }
-                _ = tokio::time::sleep(Duration::from_secs(5)), if !writer.buffer().is_empty() => {
-                    debug!("Flushing audits to disk");
-                    writer.flush().await?;
-                }
-                Ok(()) = reload.changed() => {
-                    info!("Flushing audits to disk");
-                    writer.flush().await?;
-
-                    info!("Reopening handle to log file");
-                    writer = open_writer().await?;
-
-                    info!("Successfully re-opened log file");
-                }
-                else => break,
-            }
-        }
-
-        writer.flush().await?;
-
-        Ok(())
-    });
-
-    (send, handle)
-}
-
-#[derive(Serialize)]
+#[derive(Serialize, Deserialize)]
 pub struct AuditLog {
     pub connection_id: Uuid,
     #[serde(with = "time::serde::rfc3339")]
     pub ts: OffsetDateTime,
     pub peer_address: Option<SocketAddr>,
-    #[serde(skip_serializing_if = "Vec::is_empty")]
+    pub host: Cow<'static, str>,
+    #[serde(skip_serializing_if = "Vec::is_empty", default)]
     pub environment_variables: Vec<(Box<str>, Box<str>)>,
     pub events: Vec<AuditLogEvent>,
-    #[serde(skip)]
+    #[serde(skip, default = "Instant::now")]
     pub start: Instant,
 }
 
@@ -101,6 +28,7 @@ impl Default for AuditLog {
         Self {
             connection_id: Uuid::default(),
             ts: OffsetDateTime::now_utc(),
+            host: Cow::Borrowed(""),
             peer_address: None,
             environment_variables: vec![],
             events: vec![],
@@ -129,14 +57,15 @@ impl AuditLog {
     }
 }
 
-#[derive(Debug, Serialize)]
+#[derive(Debug, Serialize, Deserialize)]
 pub struct AuditLogEvent {
     pub start_offset: Duration,
     pub action: AuditLogAction,
 }
 
-#[derive(Debug, Serialize)]
+#[derive(Debug, Serialize, Deserialize, IntoStaticStr)]
 #[serde(tag = "type", rename_all = "kebab-case")]
+#[strum(serialize_all = "kebab-case")]
 pub enum AuditLogAction {
     LoginAttempt(LoginAttemptEvent),
     PtyRequest(PtyRequestEvent),
@@ -153,27 +82,27 @@ pub enum AuditLogAction {
     CancelTcpIpForward(TcpIpForwardEvent),
 }
 
-#[derive(Debug, Serialize)]
+#[derive(Debug, Serialize, Deserialize)]
 pub struct ExecCommandEvent {
     pub args: Box<[String]>,
 }
 
-#[derive(Debug, Serialize)]
+#[derive(Debug, Serialize, Deserialize)]
 pub struct WindowAdjustedEvent {
     pub new_size: usize,
 }
 
-#[derive(Debug, Serialize)]
+#[derive(Debug, Serialize, Deserialize)]
 pub struct SubsystemRequestEvent {
     pub name: Box<str>,
 }
 
-#[derive(Debug, Serialize)]
+#[derive(Debug, Serialize, Deserialize)]
 pub struct SignalEvent {
     pub name: Box<str>,
 }
 
-#[derive(Debug, Serialize)]
+#[derive(Debug, Serialize, Deserialize)]
 #[serde(tag = "credential-type", rename_all = "kebab-case")]
 pub enum LoginAttemptEvent {
     UsernamePassword {
@@ -181,12 +110,12 @@ pub enum LoginAttemptEvent {
         password: Box<str>,
     },
     PublicKey {
-        kind: &'static str,
+        kind: Cow<'static, str>,
         fingerprint: Box<str>,
     },
 }
 
-#[derive(Debug, Serialize)]
+#[derive(Debug, Serialize, Deserialize)]
 pub struct PtyRequestEvent {
     pub term: Box<str>,
     pub col_width: u32,
@@ -196,13 +125,13 @@ pub struct PtyRequestEvent {
     pub modes: Box<[(u8, u32)]>,
 }
 
-#[derive(Debug, Serialize)]
+#[derive(Debug, Serialize, Deserialize)]
 pub struct OpenX11Event {
     pub originator_address: Box<str>,
     pub originator_port: u32,
 }
 
-#[derive(Debug, Serialize)]
+#[derive(Debug, Serialize, Deserialize)]
 pub struct X11RequestEvent {
     pub single_connection: bool,
     pub x11_auth_protocol: Box<str>,
@@ -210,7 +139,7 @@ pub struct X11RequestEvent {
     pub x11_screen_number: u32,
 }
 
-#[derive(Debug, Serialize)]
+#[derive(Debug, Serialize, Deserialize)]
 pub struct OpenDirectTcpIpEvent {
     pub host_to_connect: Box<str>,
     pub port_to_connect: u32,
@@ -218,7 +147,7 @@ pub struct OpenDirectTcpIpEvent {
     pub originator_port: u32,
 }
 
-#[derive(Debug, Serialize)]
+#[derive(Debug, Serialize, Deserialize)]
 pub struct WindowChangeRequestEvent {
     pub col_width: u32,
     pub row_height: u32,
@@ -226,7 +155,7 @@ pub struct WindowChangeRequestEvent {
     pub pix_height: u32,
 }
 
-#[derive(Debug, Serialize)]
+#[derive(Debug, Serialize, Deserialize)]
 pub struct TcpIpForwardEvent {
     pub address: Box<str>,
     pub port: u32,

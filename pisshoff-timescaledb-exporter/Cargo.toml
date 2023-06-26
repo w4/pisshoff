@@ -1,0 +1,23 @@
+[package]
+name = "pisshoff-timescaledb-exporter"
+version = "0.1.0"
+edition = "2021"
+
+# See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
+
+[dependencies]
+pisshoff-types = { path = "../pisshoff-types" }
+
+anyhow = "1.0"
+clap = { version = "4.3", features = ["derive", "env", "cargo"] }
+deadpool-postgres = { version = "0.10", features = ["rt_tokio_1", "serde"] }
+futures = "0.3"
+refinery = { version = "0.8", features = ["tokio-postgres"] }
+tokio = { version = "1.28", features = ["full"] }
+tokio-util = { version = "0.7", features = ["codec"] }
+tokio-postgres = { version = "0.7", features = ["with-time-0_3", "with-uuid-1", "with-serde_json-1"] }
+tracing = "0.1"
+tracing-subscriber = { version = "0.3", features = ["env-filter"] }
+serde = { version = "1.0", features = ["derive"] }
+serde_json = "1.0"
+toml = "0.7"

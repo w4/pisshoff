@@ -39,13 +39,19 @@ pub const SHELL_PROMPT: &str = "bash-5.1$ ";
 pub struct Server {
     config: Arc<Config>,
     state: Arc<State>,
+    hostname: &'static str,
     audit_send: UnboundedSender<AuditLog>,
 }
 
 impl Server {
-    pub fn new(config: Arc<Config>, audit_send: UnboundedSender<AuditLog>) -> Self {
+    pub fn new(
+        hostname: &'static str,
+        config: Arc<Config>,
+        audit_send: UnboundedSender<AuditLog>,
+    ) -> Self {
         Self {
             config,
+            hostname,
             state: Arc::new(State::default()),
             audit_send,
         }
@@ -63,6 +69,7 @@ impl thrussh::server::Server for Server {
             server: self.clone(),
             audit_log: AuditLog {
                 connection_id,
+                host: Cow::Borrowed(self.hostname),
                 peer_address: peer_addr,
                 ..AuditLog::default()
             },
@@ -169,7 +176,7 @@ impl thrussh::server::Handler for Connection {
 
         self.audit_log
             .push_action(AuditLogAction::LoginAttempt(LoginAttemptEvent::PublicKey {
-                kind,
+                kind: Cow::Borrowed(kind),
                 fingerprint: Box::from(fingerprint),
             }));
 

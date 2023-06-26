@@ -2,6 +2,7 @@
 #![allow(clippy::module_name_repetitions)]
 
 use crate::{config::Args, server::Server};
+use anyhow::anyhow;
 use clap::Parser;
 use futures::FutureExt;
 use std::sync::Arc;
@@ -42,6 +43,12 @@ async fn run() -> anyhow::Result<()> {
         args.config.listen_address
     );
 
+    let hostname = Box::leak(
+        nix::unistd::gethostname()?
+            .into_string()
+            .map_err(|_| anyhow!("invalid hostname"))?
+            .into_boxed_str(),
+    );
     let keys = vec![thrussh_keys::key::KeyPair::generate_ed25519().unwrap()];
 
     let thrussh_config = Arc::new(thrussh::server::Config {
@@ -59,7 +66,7 @@ async fn run() -> anyhow::Result<()> {
         audit::start_audit_writer(args.config.clone(), reload_recv, shutdown_recv);
     let mut audit_handle = audit_handle.fuse();
 
-    let server = Server::new(args.config.clone(), audit_send);
+    let server = Server::new(hostname, args.config.clone(), audit_send);
     let listen_address = args.config.listen_address.to_string();
 
     // TODO: needs clean shutdowns on clients
