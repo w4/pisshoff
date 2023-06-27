@@ -93,7 +93,7 @@
                 delaycompress = true;
                 missingok = true;
                 notifempty = true;
-                postrotate = "systemctl reload pisshoff";
+                postrotate = "systemctl reload pisshoff-server";
               };
             };
           };
