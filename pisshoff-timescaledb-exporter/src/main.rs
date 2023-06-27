@@ -108,11 +108,12 @@ async fn ingest_log(context: Arc<Context>, line: String) -> anyhow::Result<()> {
         async {
             let prepared = tx.prepare("INSERT INTO audit_environment_variables (connection_id, name, value) VALUES ($1, $2, $3)").await?;
 
-            futures::future::try_join_all(
-                line.environment_variables
-                    .iter()
-                    .map(|(key, value)| async { tx.execute(&prepared, &[key, value]).await }),
-            )
+            futures::future::try_join_all(line.environment_variables.iter().map(
+                |(key, value)| async {
+                    tx.execute(&prepared, &[&line.connection_id, key, value])
+                        .await
+                },
+            ))
             .await
             .map_err(anyhow::Error::from)
         },

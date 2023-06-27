@@ -80,7 +80,7 @@ or available locally via: info '(coreutils) uname invocation'\n".into(),
                 Some("-") => "uname: extra operand '-'\nTry 'uname --help' for more information.\n".into(),
                 Some(v) => format!(
                     "uname: invalid option -- '{}'\nTry 'uname --help' for more information.\n",
-                    if v.starts_with("-") && !v.starts_with("--") {
+                    if v.starts_with('-') && !v.starts_with("--") {
                         &v[1..]
                     } else {
                         v
