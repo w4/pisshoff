@@ -76,9 +76,11 @@ pub fn execute(params: &[String]) -> String {
                     "uname: invalid option -- '{s}'\nTry 'uname --help' for more information.\n"
                 );
             }
-            Arg::Long(s) => return format!(
+            Arg::Long(s) => {
+                return format!(
                 "uname: unrecognized option '--{s}'\nTry 'uname --help' for more information.\n"
-            ),
+            )
+            }
         };
     }
 

@@ -1,10 +1,16 @@
 pub mod uname;
 
+use crate::server::Connection;
 use itertools::{Either, Itertools};
 use std::{f32, str::FromStr, time::Duration};
 use thrussh::{server::Session, ChannelId};
 
-pub async fn run_command(args: &[String], channel: ChannelId, session: &mut Session) {
+pub async fn run_command(
+    args: &[String],
+    channel: ChannelId,
+    session: &mut Session,
+    conn: &mut Connection,
+) {
     let Some(command) = args.get(0) else {
         return;
     };
@@ -17,12 +23,18 @@ pub async fn run_command(args: &[String], channel: ChannelId, session: &mut Sess
             );
         }
         "whoami" => {
-            // TODO: grab "logged in" user
-            session.data(channel, "root\n".to_string().into());
+            session.data(channel, format!("{}\n", conn.username()).into());
         }
         "pwd" => {
             // TODO: mock FHS
-            session.data(channel, "/root\n".to_string().into());
+            let username = conn.username();
+            let pwd = if conn.username() == "root" {
+                "/root\n".to_string()
+            } else {
+                format!("/home/{username}\n")
+            };
+
+            session.data(channel, pwd.into());
         }
         "ls" => {
             // pretend /root is empty until we mock the FHS

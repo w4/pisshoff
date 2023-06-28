@@ -73,6 +73,7 @@ impl thrussh::server::Server for Server {
                 peer_address: peer_addr,
                 ..AuditLog::default()
             },
+            username: None,
         }
     }
 }
@@ -81,10 +82,17 @@ pub struct Connection {
     span: Span,
     server: Server,
     audit_log: AuditLog,
+    username: Option<String>,
 }
 
 impl Connection {
+    pub fn username(&self) -> &str {
+        self.username.as_deref().unwrap_or("root")
+    }
+
     fn try_login(&mut self, user: &str, password: &str) -> bool {
+        self.username = Some(user.to_string());
+
         let res = if self
             .server
             .state
@@ -295,7 +303,7 @@ impl thrussh::server::Handler for Connection {
 
         async move {
             if let Some(args) = data {
-                run_command(&args, channel, &mut session).await;
+                run_command(&args, channel, &mut session, &mut self).await;
                 self.audit_log
                     .push_action(AuditLogAction::ExecCommand(ExecCommandEvent {
                         args: Box::from(args),
@@ -447,7 +455,7 @@ impl thrussh::server::Handler for Connection {
 
         async move {
             if let Some(args) = data {
-                run_command(&args, channel, &mut session).await;
+                run_command(&args, channel, &mut session, &mut self).await;
                 self.audit_log
                     .push_action(AuditLogAction::ExecCommand(ExecCommandEvent {
                         args: Box::from(args),
