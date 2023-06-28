@@ -1,0 +1,6 @@
+---
+source: pisshoff-server/src/command/uname.rs
+expression: output
+---
+Linux cd5079c0d642 5.15.49 #1 SMP PREEMPT Tue Sep 13 07:51:32 UTC 2022 x86_64 GNU/Linux
+

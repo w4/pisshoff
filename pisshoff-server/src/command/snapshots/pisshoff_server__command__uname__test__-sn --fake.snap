@@ -1,0 +1,7 @@
+---
+source: pisshoff-server/src/command/uname.rs
+expression: output
+---
+uname: unrecognized option '--fake'
+Try 'uname --help' for more information.
+

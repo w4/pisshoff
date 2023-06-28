@@ -1,0 +1,7 @@
+---
+source: pisshoff-server/src/command/uname.rs
+expression: output
+---
+uname: invalid option -- 'z'
+Try 'uname --help' for more information.
+
