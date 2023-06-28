@@ -2,8 +2,7 @@ pub mod uname;
 
 use crate::server::Connection;
 use itertools::{Either, Itertools};
-use std::fmt::Write;
-use std::{f32, str::FromStr, time::Duration};
+use std::{f32, fmt::Write, str::FromStr, time::Duration};
 use thrussh::{server::Session, ChannelId};
 
 pub async fn run_command(

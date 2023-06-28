@@ -108,7 +108,7 @@ impl Connection {
             .server
             .state
             .previously_accepted_passwords
-            .seen(password)
+            .seen(user, password)
         {
             info!(user, password, "Accepted login due to it being used before");
             true
@@ -117,7 +117,7 @@ impl Connection {
             self.server
                 .state
                 .previously_accepted_passwords
-                .store(password);
+                .store(user, password);
             true
         } else {
             info!(?user, ?password, "Rejected login");
