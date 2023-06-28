@@ -2,6 +2,7 @@ pub mod uname;
 
 use crate::server::Connection;
 use itertools::{Either, Itertools};
+use std::fmt::Write;
 use std::{f32, str::FromStr, time::Duration};
 use thrussh::{server::Session, ChannelId};
 
@@ -26,18 +27,45 @@ pub async fn run_command(
             session.data(channel, format!("{}\n", conn.username()).into());
         }
         "pwd" => {
-            // TODO: mock FHS
-            let username = conn.username();
-            let pwd = if conn.username() == "root" {
-                "/root\n".to_string()
-            } else {
-                format!("/home/{username}\n")
-            };
-
-            session.data(channel, pwd.into());
+            session.data(
+                channel,
+                format!("{}\n", conn.file_system().pwd().display()).into(),
+            );
         }
         "ls" => {
-            // pretend /root is empty until we mock the FHS
+            let resp = if args.len() == 1 {
+                conn.file_system().ls(None).join("  ")
+            } else if args.len() == 2 {
+                conn.file_system().ls(Some(args.get(1).unwrap())).join("  ")
+            } else {
+                let mut out = String::new();
+
+                for dir in args.iter().skip(1) {
+                    if !out.is_empty() {
+                        out.push_str("\n\n");
+                    }
+
+                    write!(out, "{dir}:").unwrap();
+                    out.push_str(&conn.file_system().ls(Some(dir)).join("  "));
+                }
+
+                out
+            };
+
+            if !resp.is_empty() {
+                session.data(channel, format!("{resp}\n").into());
+            }
+        }
+        "cd" => {
+            if args.len() > 2 {
+                session.data(
+                    channel,
+                    "-bash: cd: too many arguments\n".to_string().into(),
+                );
+                return;
+            }
+
+            conn.file_system().cd(args.get(1).map(String::as_str));
         }
         "exit" => {
             let exit_status = args

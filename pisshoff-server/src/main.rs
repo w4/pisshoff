@@ -17,6 +17,7 @@ use tracing_subscriber::EnvFilter;
 mod audit;
 mod command;
 mod config;
+mod file_system;
 mod server;
 mod state;
 

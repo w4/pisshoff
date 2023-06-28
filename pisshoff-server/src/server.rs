@@ -2,6 +2,7 @@ use crate::audit::{
     ExecCommandEvent, SignalEvent, SubsystemRequestEvent, TcpIpForwardEvent, WindowAdjustedEvent,
     WindowChangeRequestEvent,
 };
+use crate::file_system::FileSystem;
 use crate::{
     audit::{
         AuditLog, AuditLogAction, LoginAttemptEvent, OpenDirectTcpIpEvent, OpenX11Event,
@@ -74,6 +75,7 @@ impl thrussh::server::Server for Server {
                 ..AuditLog::default()
             },
             username: None,
+            file_system: None,
         }
     }
 }
@@ -83,11 +85,20 @@ pub struct Connection {
     server: Server,
     audit_log: AuditLog,
     username: Option<String>,
+    file_system: Option<FileSystem>,
 }
 
 impl Connection {
     pub fn username(&self) -> &str {
         self.username.as_deref().unwrap_or("root")
+    }
+
+    pub fn file_system(&mut self) -> &mut FileSystem {
+        if self.file_system.is_none() {
+            self.file_system = Some(FileSystem::new(self.username()));
+        }
+
+        self.file_system.as_mut().unwrap()
     }
 
     fn try_login(&mut self, user: &str, password: &str) -> bool {
