@@ -80,6 +80,19 @@ pub enum AuditLogAction {
     Signal(SignalEvent),
     TcpIpForward(TcpIpForwardEvent),
     CancelTcpIpForward(TcpIpForwardEvent),
+    Mkdir(MkdirEvent),
+    WriteFile(WriteFileEvent),
+}
+
+#[derive(Debug, Serialize, Deserialize)]
+pub struct MkdirEvent {
+    pub path: Box<str>,
+}
+
+#[derive(Debug, Serialize, Deserialize)]
+pub struct WriteFileEvent {
+    pub path: Box<str>,
+    pub content: Box<str>,
 }
 
 #[derive(Debug, Serialize, Deserialize)]

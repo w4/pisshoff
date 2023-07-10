@@ -20,6 +20,7 @@ mod config;
 mod file_system;
 mod server;
 mod state;
+mod subsystem;
 
 #[tokio::main]
 async fn main() {
