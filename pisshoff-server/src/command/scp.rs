@@ -1,5 +1,5 @@
 use crate::{
-    command::{Arg, LongRunningCommand},
+    command::{Arg, Command, CommandResult},
     server::Connection,
 };
 use async_trait::async_trait;
@@ -32,12 +32,13 @@ pub struct Scp {
 }
 
 #[async_trait]
-impl LongRunningCommand for Scp {
-    fn new(
+impl Command for Scp {
+    async fn new(
+        _connection: &mut Connection,
         params: &[String],
         channel: ChannelId,
         session: &mut Session,
-    ) -> Result<Self, &'static str> {
+    ) -> CommandResult<Self> {
         let mut path = None;
         let mut transfer = false;
 
@@ -53,36 +54,39 @@ impl LongRunningCommand for Scp {
                     path = Some(p);
                 }
                 _ => {
-                    return Err(HELP);
+                    session.data(channel, HELP.to_string().into());
+                    return CommandResult::Exit(1);
                 }
             }
         }
 
         let Some(path) = path else {
-            return Err(AMBIGUOUS_TARGET);
+            session.data(channel, AMBIGUOUS_TARGET.to_string().into());
+            return CommandResult::Exit(1);
         };
 
         if !transfer {
-            return Err(HELP);
+            session.data(channel, HELP.to_string().into());
+            return CommandResult::Exit(1);
         }
 
         // signal to the client we've started listening
         session.data(channel, SUCCESS.to_string().into());
 
-        Ok(Self {
+        CommandResult::ReadStdin(Self {
             path: PathBuf::new().join(path),
             pending_data: BytesMut::new(),
             state: State::Waiting,
         })
     }
 
-    async fn data(
+    async fn stdin(
         mut self,
         connection: &mut Connection,
         channel: ChannelId,
         data: &[u8],
         session: &mut Session,
-    ) -> Option<Self> {
+    ) -> CommandResult<Self> {
         self.pending_data.extend_from_slice(data);
 
         let mut exit = false;
@@ -119,7 +123,7 @@ impl LongRunningCommand for Scp {
                         }
                         Err(error) => {
                             warn!(%error, "Rejecting scp modes payload");
-                            return None;
+                            return CommandResult::Exit(1);
                         }
                     }
                 }
@@ -158,7 +162,7 @@ impl LongRunningCommand for Scp {
             self.state = next_state;
         }
 
-        Some(self)
+        CommandResult::ReadStdin(self)
     }
 }
 

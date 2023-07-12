@@ -1,5 +1,5 @@
 use crate::{
-    command::{run_command, ConcreteLongRunningCommand},
+    command::{CommandResult, ConcreteCommand},
     server::Connection,
     subsystem::Subsystem,
 };
@@ -26,6 +26,19 @@ impl Shell {
             state: State::Prompt,
         }
     }
+
+    fn handle_command_result(
+        &self,
+        command_result: CommandResult<ConcreteCommand>,
+    ) -> (State, bool) {
+        match (command_result, self.interactive) {
+            (CommandResult::ReadStdin(cmd), _) => (State::Running(cmd), true),
+            (CommandResult::Exit(exit_status), true) => (State::Exit(exit_status), false),
+            (CommandResult::Exit(exit_status), false) | (CommandResult::Close(exit_status), _) => {
+                (State::Quit(exit_status), false)
+            }
+        }
+    }
 }
 
 #[async_trait]
@@ -39,38 +52,46 @@ impl Subsystem for Shell {
         data: &[u8],
         session: &mut Session,
     ) {
-        let next = match std::mem::take(&mut self.state) {
-            State::Prompt => {
-                let Some(args) = shlex::split(String::from_utf8_lossy(data).as_ref()) else {
-                    return;
-                };
+        loop {
+            let (next, terminal) = match std::mem::take(&mut self.state) {
+                State::Prompt => {
+                    let Some(args) = shlex::split(String::from_utf8_lossy(data).as_ref()) else {
+                        return;
+                    };
 
-                connection
-                    .audit_log()
-                    .push_action(AuditLogAction::ExecCommand(ExecCommandEvent {
-                        args: Box::from(args.clone()),
-                    }));
+                    connection
+                        .audit_log()
+                        .push_action(AuditLogAction::ExecCommand(ExecCommandEvent {
+                            args: Box::from(args.clone()),
+                        }));
 
-                run_command(&args, channel, session, connection)
-                    .await
-                    .map_or(State::Prompt, State::Running)
-            }
-            State::Running(command) => command
-                .data(connection, channel, data, session)
-                .await
-                .map_or(State::Prompt, State::Running),
-        };
+                    self.handle_command_result(
+                        ConcreteCommand::new(connection, &args, channel, session).await,
+                    )
+                }
+                State::Running(command) => self
+                    .handle_command_result(command.stdin(connection, channel, data, session).await),
+                State::Exit(exit_status) => {
+                    session.exit_status_request(channel, exit_status);
+                    (State::Prompt, true)
+                }
+                State::Quit(exit_status) => {
+                    session.exit_status_request(channel, exit_status);
+                    session.close(channel);
+                    break;
+                }
+            };
 
-        if matches!(next, State::Prompt) {
-            if self.interactive {
-                session.data(channel, SHELL_PROMPT.to_string().into());
-            } else {
-                session.exit_status_request(channel, 0);
-                session.close(channel);
+            self.state = next;
+
+            if terminal {
+                break;
             }
         }
 
-        self.state = next;
+        if matches!(self.state, State::Prompt) {
+            session.data(channel, SHELL_PROMPT.to_string().into());
+        }
     }
 }
 
@@ -78,5 +99,7 @@ impl Subsystem for Shell {
 enum State {
     #[default]
     Prompt,
-    Running(ConcreteLongRunningCommand),
+    Running(ConcreteCommand),
+    Exit(u32),
+    Quit(u32),
 }

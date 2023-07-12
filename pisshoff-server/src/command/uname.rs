@@ -1,5 +1,10 @@
-use crate::command::Arg;
+use crate::{
+    command::{Arg, Command, CommandResult},
+    server::Connection,
+};
+use async_trait::async_trait;
 use bitflags::bitflags;
+use thrussh::{server::Session, ChannelId};
 
 bitflags! {
     #[derive(Clone, Copy, Debug, PartialEq, Eq, Hash)]
@@ -46,7 +51,35 @@ Full documentation <https://www.gnu.org/software/coreutils/uname>
 or available locally via: info '(coreutils) uname invocation'
 ";
 
-pub fn execute(params: &[String]) -> String {
+#[derive(Debug, Clone)]
+pub struct Uname {}
+
+#[async_trait]
+impl Command for Uname {
+    async fn new(
+        _connection: &mut Connection,
+        params: &[String],
+        channel: ChannelId,
+        session: &mut Session,
+    ) -> CommandResult<Self> {
+        let (out, exit_code) = execute(params);
+
+        session.data(channel, out.into());
+        CommandResult::Exit(exit_code)
+    }
+
+    async fn stdin(
+        self,
+        _connection: &mut Connection,
+        _channel: ChannelId,
+        _data: &[u8],
+        _session: &mut Session,
+    ) -> CommandResult<Self> {
+        CommandResult::Exit(0)
+    }
+}
+
+pub fn execute(params: &[String]) -> (String, u32) {
     let mut to_print = ToPrint::empty();
     let mut filter_unknown = false;
 
@@ -64,24 +97,37 @@ pub fn execute(params: &[String]) -> String {
             Arg::Short('p') | Arg::Long("processor") => ToPrint::PROCESSOR,
             Arg::Short('i') | Arg::Long("hardware-platform") => ToPrint::PLATFORM,
             Arg::Short('o') | Arg::Long("operating-system") => ToPrint::OPERATING_SYSTEM,
-            Arg::Long("help") => return HELP_STRING.to_string(),
-            Arg::Long("version") => return VERSION_STRING.to_string(),
+            Arg::Long("help") => return (HELP_STRING.to_string(), 0),
+            Arg::Long("version") => return (VERSION_STRING.to_string(), 0),
             Arg::Operand(operand) => {
-                return format!(
+                return (
+                    format!(
                     "uname: extra operand '{operand}'\nTry 'uname --help' for more information.\n"
+                ),
+                    1,
                 );
             }
             Arg::Short(s) => {
-                return format!(
+                return (
+                    format!(
                     "uname: invalid option -- '{s}'\nTry 'uname --help' for more information.\n"
+                ),
+                    1,
                 );
             }
             Arg::Long(s) => {
-                return format!(
-                "uname: unrecognized option '--{s}'\nTry 'uname --help' for more information.\n"
-            )
+                return (
+                    format!(
+                    "uname: unrecognized option '--{s}'\nTry 'uname --help' for more information.\n"
+                ),
+                    1,
+                );
             }
         };
+    }
+
+    if to_print.is_empty() {
+        to_print |= ToPrint::KERNEL_NAME;
     }
 
     let mut out = String::with_capacity(105);
@@ -130,7 +176,7 @@ pub fn execute(params: &[String]) -> String {
 
     out.push('\n');
 
-    out
+    (out, 0)
 }
 
 #[cfg(test)]
@@ -138,17 +184,19 @@ mod test {
     use crate::command::uname::execute;
     use test_case::test_case;
 
-    #[test_case("-a"; "all")]
-    #[test_case("-snrvmpio"; "all separate")]
-    #[test_case("-asnrvmpio"; "all separate with all")]
-    #[test_case("-sn"; "subset")]
-    #[test_case("-sn --fake"; "unknown long arg param")]
-    #[test_case("-sn -z"; "unknown short arg param")]
-    #[test_case("-sn oper"; "unknown operand")]
-    fn snapshot(input: &str) {
+    #[test_case("", 0; "none")]
+    #[test_case("-a", 0; "all")]
+    #[test_case("-snrvmpio", 0; "all separate")]
+    #[test_case("-asnrvmpio", 0; "all separate with all")]
+    #[test_case("-sn", 0; "subset")]
+    #[test_case("-sn --fake", 1; "unknown long arg param")]
+    #[test_case("-sn -z", 1; "unknown short arg param")]
+    #[test_case("-sn oper", 1; "unknown operand")]
+    fn snapshot(input: &str, expected_exit_code: u32) {
         let input_parsed = shlex::split(input).unwrap();
-        let output = execute(&input_parsed);
+        let (output, actual_exit_code) = execute(&input_parsed);
 
         insta::assert_display_snapshot!(input, output);
+        assert_eq!(actual_exit_code, expected_exit_code);
     }
 }

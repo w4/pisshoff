@@ -1,145 +1,109 @@
-pub mod scp;
-pub mod uname;
+mod echo;
+mod exit;
+mod ls;
+mod pwd;
+mod scp;
+mod uname;
+mod whoami;
 
-use crate::{command::scp::Scp, server::Connection};
+use crate::server::Connection;
 use async_trait::async_trait;
-use itertools::{Either, Itertools};
-use std::{f32, fmt::Write, str::FromStr, time::Duration};
+use itertools::Either;
 use thrussh::{server::Session, ChannelId};
 
-pub async fn run_command(
-    args: &[String],
-    channel: ChannelId,
-    session: &mut Session,
-    conn: &mut Connection,
-) -> Option<ConcreteLongRunningCommand> {
-    let Some(command) = args.get(0) else {
-        return None;
-    };
+pub enum CommandResult<T> {
+    ReadStdin(T),
+    Exit(u32),
+    Close(u32),
+}
 
-    match command.as_str() {
-        "echo" => {
-            session.data(
-                channel,
-                format!("{}\n", args.iter().skip(1).join(" ")).into(),
-            );
-        }
-        "whoami" => {
-            session.data(channel, format!("{}\n", conn.username()).into());
-        }
-        "pwd" => {
-            session.data(
-                channel,
-                format!("{}\n", conn.file_system().pwd().display()).into(),
-            );
-        }
-        "ls" => {
-            let resp = if args.len() == 1 {
-                conn.file_system().ls(None).join("  ")
-            } else if args.len() == 2 {
-                conn.file_system().ls(Some(args.get(1).unwrap())).join("  ")
-            } else {
-                let mut out = String::new();
-
-                for dir in args.iter().skip(1) {
-                    if !out.is_empty() {
-                        out.push_str("\n\n");
-                    }
-
-                    write!(out, "{dir}:").unwrap();
-                    out.push_str(&conn.file_system().ls(Some(dir)).join("  "));
-                }
-
-                out
-            };
-
-            if !resp.is_empty() {
-                session.data(channel, format!("{resp}\n").into());
-            }
-        }
-        "cd" => {
-            if args.len() > 2 {
-                session.data(
-                    channel,
-                    "-bash: cd: too many arguments\n".to_string().into(),
-                );
-                return None;
-            }
-
-            conn.file_system().cd(args.get(1).map(String::as_str));
-        }
-        "exit" => {
-            let exit_status = args
-                .get(1)
-                .map(String::as_str)
-                .map_or(Ok(0), u32::from_str)
-                .unwrap_or(2);
-
-            session.exit_status_request(channel, exit_status);
-            session.close(channel);
-        }
-        "sleep" => {
-            if let Some(Ok(secs)) = args.get(1).map(String::as_str).map(f32::from_str) {
-                tokio::time::sleep(Duration::from_secs_f32(secs)).await;
-            }
-        }
-        "uname" => {
-            let out = uname::execute(&args[1..]);
-            session.data(channel, out.into());
-        }
-        "scp" => match Scp::new(&args[1..], channel, session) {
-            Ok(v) => return Some(ConcreteLongRunningCommand::Scp(v)),
-            Err(e) => session.data(channel, e.to_string().into()),
-        },
-        other => {
-            // TODO: fix stderr displaying out of order
-            session.data(
-                channel,
-                format!("bash: {other}: command not found\n").into(),
-            );
+impl<T> CommandResult<T> {
+    fn map<N>(self, f: fn(T) -> N) -> CommandResult<N> {
+        match self {
+            Self::ReadStdin(val) => CommandResult::ReadStdin(f(val)),
+            Self::Exit(v) => CommandResult::Exit(v),
+            Self::Close(v) => CommandResult::Close(v),
         }
     }
-
-    None
 }
 
 #[async_trait]
-pub trait LongRunningCommand: Sized {
-    fn new(
+pub trait Command: Sized {
+    async fn new(
+        connection: &mut Connection,
         params: &[String],
         channel: ChannelId,
         session: &mut Session,
-    ) -> Result<Self, &'static str>;
+    ) -> CommandResult<Self>;
 
-    async fn data(
+    async fn stdin(
         self,
         connection: &mut Connection,
         channel: ChannelId,
         data: &[u8],
         session: &mut Session,
-    ) -> Option<Self>;
+    ) -> CommandResult<Self>;
 }
 
-#[derive(Debug, Clone)]
-pub enum ConcreteLongRunningCommand {
-    Scp(Scp),
-}
+macro_rules! define_commands {
+    ($($name:ident($ty:ty) = $command:expr),*) => {
+        #[derive(Debug, Clone)]
+        pub enum ConcreteCommand {
+            $($name($ty)),*
+        }
 
-impl ConcreteLongRunningCommand {
-    pub async fn data(
-        self,
-        connection: &mut Connection,
-        channel: ChannelId,
-        data: &[u8],
-        session: &mut Session,
-    ) -> Option<Self> {
-        match self {
-            Self::Scp(cmd) => cmd
-                .data(connection, channel, data, session)
-                .await
-                .map(Self::Scp),
+        impl ConcreteCommand {
+            pub async fn new(
+                connection: &mut Connection,
+                params: &[String],
+                channel: ChannelId,
+                session: &mut Session,
+            ) -> CommandResult<Self> {
+                let Some(command) = params.get(0) else {
+                    return CommandResult::Exit(0);
+                };
+
+                match command.as_str() {
+                    $($command => <$ty as Command>::new(connection, &params[1..], channel, session).await.map(Self::$name),)*
+                    other => {
+                        // TODO: fix stderr displaying out of order
+                        session.data(
+                            channel,
+                            format!("bash: {other}: command not found\n").into(),
+                        );
+                        CommandResult::Exit(1)
+                    }
+                }
+            }
+
+            pub async fn stdin(
+                self,
+                connection: &mut Connection,
+                channel: ChannelId,
+                data: &[u8],
+                session: &mut Session,
+            ) -> CommandResult<Self> {
+                match self {
+                    $(Self::$name(cmd) => {
+                        cmd
+                            .stdin(connection, channel, data, session)
+                            .await
+                            .map(Self::$name)
+                    }),*
+                }
+            }
         }
     }
+}
+
+define_commands! {
+    Echo(echo::Echo) = "echo",
+    Exit(exit::Exit) = "exit",
+    Ls(ls::Ls) = "ls",
+    Pwd(pwd::Pwd) = "pwd",
+    Scp(scp::Scp) = "scp",
+    Uname(uname::Uname) = "uname",
+    Whoami(whoami::Whoami) = "whoami"
 }
 
 #[derive(Debug, Copy, Clone, PartialEq, Eq)]

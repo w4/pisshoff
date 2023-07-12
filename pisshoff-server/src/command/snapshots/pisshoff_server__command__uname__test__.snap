@@ -1,0 +1,6 @@
+---
+source: pisshoff-server/src/command/uname.rs
+expression: output
+---
+Linux
+
