@@ -1,6 +1,8 @@
+pub mod scp;
 pub mod uname;
 
-use crate::server::Connection;
+use crate::{command::scp::Scp, server::Connection};
+use async_trait::async_trait;
 use itertools::{Either, Itertools};
 use std::{f32, fmt::Write, str::FromStr, time::Duration};
 use thrussh::{server::Session, ChannelId};
@@ -10,9 +12,9 @@ pub async fn run_command(
     channel: ChannelId,
     session: &mut Session,
     conn: &mut Connection,
-) {
+) -> Option<ConcreteLongRunningCommand> {
     let Some(command) = args.get(0) else {
-        return;
+        return None;
     };
 
     match command.as_str() {
@@ -61,7 +63,7 @@ pub async fn run_command(
                     channel,
                     "-bash: cd: too many arguments\n".to_string().into(),
                 );
-                return;
+                return None;
             }
 
             conn.file_system().cd(args.get(1).map(String::as_str));
@@ -85,12 +87,57 @@ pub async fn run_command(
             let out = uname::execute(&args[1..]);
             session.data(channel, out.into());
         }
+        "scp" => match Scp::new(&args[1..], channel, session) {
+            Ok(v) => return Some(ConcreteLongRunningCommand::Scp(v)),
+            Err(e) => session.data(channel, e.to_string().into()),
+        },
         other => {
             // TODO: fix stderr displaying out of order
             session.data(
                 channel,
                 format!("bash: {other}: command not found\n").into(),
             );
+        }
+    }
+
+    None
+}
+
+#[async_trait]
+pub trait LongRunningCommand: Sized {
+    fn new(
+        params: &[String],
+        channel: ChannelId,
+        session: &mut Session,
+    ) -> Result<Self, &'static str>;
+
+    async fn data(
+        self,
+        connection: &mut Connection,
+        channel: ChannelId,
+        data: &[u8],
+        session: &mut Session,
+    ) -> Option<Self>;
+}
+
+#[derive(Debug, Clone)]
+pub enum ConcreteLongRunningCommand {
+    Scp(Scp),
+}
+
+impl ConcreteLongRunningCommand {
+    pub async fn data(
+        self,
+        connection: &mut Connection,
+        channel: ChannelId,
+        data: &[u8],
+        session: &mut Session,
+    ) -> Option<Self> {
+        match self {
+            Self::Scp(cmd) => cmd
+                .data(connection, channel, data, session)
+                .await
+                .map(Self::Scp),
         }
     }
 }

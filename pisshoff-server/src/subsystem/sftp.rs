@@ -1,5 +1,6 @@
-use crate::subsystem::Subsystem;
+use crate::{server::Connection, subsystem::Subsystem};
 use async_trait::async_trait;
+use bytes::Bytes;
 use nom::{
     bytes::complete::take,
     combinator::{map_res, opt},
@@ -7,7 +8,7 @@ use nom::{
     number::complete::{be_u32, be_u64, be_u8},
     IResult,
 };
-use pisshoff_types::audit::{AuditLog, AuditLogAction, MkdirEvent, WriteFileEvent};
+use pisshoff_types::audit::{AuditLogAction, MkdirEvent, WriteFileEvent};
 use std::{collections::HashMap, io::Write, mem::size_of, str::FromStr};
 use strum::FromRepr;
 use thrussh::{server::Session, ChannelId};
@@ -28,7 +29,7 @@ impl Subsystem for Sftp {
     #[allow(clippy::too_many_lines)]
     async fn data(
         &mut self,
-        audit_log: &mut AuditLog,
+        connection: &mut Connection,
         channel: ChannelId,
         data: &[u8],
         session: &mut Session,
@@ -128,10 +129,12 @@ impl Subsystem for Sftp {
                         write_packet.offset, write_packet.data
                     );
 
-                    audit_log.push_action(AuditLogAction::WriteFile(WriteFileEvent {
-                        path: path.to_string().into_boxed_str(),
-                        content: write_packet.data.to_string().into_boxed_str(),
-                    }));
+                    connection
+                        .audit_log()
+                        .push_action(AuditLogAction::WriteFile(WriteFileEvent {
+                            path: path.to_string().into_boxed_str(),
+                            content: Bytes::copy_from_slice(write_packet.data.as_bytes()),
+                        }));
 
                     session.data(
                         channel,
@@ -205,9 +208,11 @@ impl Subsystem for Sftp {
 
                     trace!("SFTP mkdir packet: {mkdir:?}");
 
-                    audit_log.push_action(AuditLogAction::Mkdir(MkdirEvent {
-                        path: mkdir.path.to_string().into_boxed_str(),
-                    }));
+                    connection
+                        .audit_log()
+                        .push_action(AuditLogAction::Mkdir(MkdirEvent {
+                            path: mkdir.path.to_string().into_boxed_str(),
+                        }));
 
                     session.data(
                         channel,

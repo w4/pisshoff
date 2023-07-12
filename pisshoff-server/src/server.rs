@@ -4,15 +4,13 @@ use crate::{
         PtyRequestEvent, X11RequestEvent,
     },
     audit::{
-        ExecCommandEvent, SignalEvent, SubsystemRequestEvent, TcpIpForwardEvent,
-        WindowAdjustedEvent, WindowChangeRequestEvent,
+        SignalEvent, SubsystemRequestEvent, TcpIpForwardEvent, WindowAdjustedEvent,
+        WindowChangeRequestEvent,
     },
-    command::run_command,
     config::Config,
     file_system::FileSystem,
     state::State,
-    subsystem,
-    subsystem::Subsystem as SubsystemTrait,
+    subsystem::{self, shell::Shell, Subsystem as SubsystemTrait},
 };
 use futures::{
     future::{BoxFuture, InspectErr},
@@ -38,7 +36,6 @@ use tracing::{debug, error, info, info_span, instrument::Instrumented, Instrumen
 
 pub static KEYBOARD_INTERACTIVE_PROMPT: &[(Cow<'static, str>, bool)] =
     &[(Cow::Borrowed("Password: "), false)];
-pub const SHELL_PROMPT: &str = "bash-5.1$ ";
 
 #[derive(Clone)]
 pub struct Server {
@@ -105,6 +102,10 @@ impl Connection {
         }
 
         self.file_system.as_mut().unwrap()
+    }
+
+    pub fn audit_log(&mut self) -> &mut AuditLog {
+        &mut self.audit_log
     }
 
     fn try_login(&mut self, user: &str, password: &str) -> bool {
@@ -255,15 +256,13 @@ impl thrussh::server::Handler for Connection {
         let _entered = span.enter();
 
         if self.subsystem.remove(&channel).is_some() {
+            session.exit_status_request(channel, 0);
             session.channel_success(channel);
         } else {
             session.channel_failure(channel);
         }
 
-        if self.subsystem.is_empty() {
-            session.exit_status_request(channel, 0);
-            session.close(channel);
-        }
+        session.close(channel);
 
         self.finished(session).boxed().wrap(Span::current())
     }
@@ -332,22 +331,11 @@ impl thrussh::server::Handler for Connection {
             let mut subsystem = subsystem.lock().await;
 
             match &mut *subsystem {
-                Subsystem::Shell => {
-                    let data = shlex::split(String::from_utf8_lossy(&data).as_ref());
-                    if let Some(args) = data {
-                        run_command(&args, channel, &mut session, &mut self).await;
-                        self.audit_log
-                            .push_action(AuditLogAction::ExecCommand(ExecCommandEvent {
-                                args: Box::from(args),
-                            }));
-                    }
-
-                    session.data(channel, SHELL_PROMPT.to_string().into());
+                Subsystem::Shell(ref mut inner) => {
+                    inner.data(&mut self, channel, &data, &mut session).await;
                 }
                 Subsystem::Sftp(ref mut inner) => {
-                    inner
-                        .data(&mut self.audit_log, channel, &data, &mut session)
-                        .await;
+                    inner.data(&mut self, channel, &data, &mut session).await;
                 }
             }
 
@@ -476,9 +464,9 @@ impl thrussh::server::Handler for Connection {
 
         self.audit_log.push_action(AuditLogAction::ShellRequested);
 
-        session.data(channel, SHELL_PROMPT.to_string().into());
+        let shell = Shell::new(true, channel, &mut session);
         self.subsystem
-            .insert(channel, Arc::new(Mutex::new(Subsystem::Shell)));
+            .insert(channel, Arc::new(Mutex::new(Subsystem::Shell(shell))));
 
         session.channel_success(channel);
         self.finished(session).boxed().wrap(Span::current())
@@ -493,21 +481,16 @@ impl thrussh::server::Handler for Connection {
         let span = info_span!(parent: &self.span, "exec_request");
         let _entered = span.enter();
 
-        let data = shlex::split(String::from_utf8_lossy(data).as_ref());
+        let data = data.to_vec();
 
         async move {
-            if let Some(args) = data {
-                run_command(&args, channel, &mut session, &mut self).await;
-                self.audit_log
-                    .push_action(AuditLogAction::ExecCommand(ExecCommandEvent {
-                        args: Box::from(args),
-                    }));
+            let mut shell = Shell::new(false, channel, &mut session);
+            shell.data(&mut self, channel, &data, &mut session).await;
 
-                session.channel_success(channel);
-            } else {
-                session.channel_failure(channel);
-            }
+            self.subsystem
+                .insert(channel, Arc::new(Mutex::new(Subsystem::Shell(shell))));
 
+            session.channel_success(channel);
             self.finished(session).await
         }
         .boxed()
@@ -639,7 +622,7 @@ impl Drop for Connection {
 
 #[derive(Debug, Clone)]
 pub enum Subsystem {
-    Shell,
+    Shell(subsystem::shell::Shell),
     Sftp(subsystem::sftp::Sftp),
 }
 

@@ -1,3 +1,4 @@
+use bytes::Bytes;
 use serde::{Deserialize, Serialize};
 use std::borrow::Cow;
 use std::{
@@ -92,7 +93,7 @@ pub struct MkdirEvent {
 #[derive(Debug, Serialize, Deserialize)]
 pub struct WriteFileEvent {
     pub path: Box<str>,
-    pub content: Box<str>,
+    pub content: Bytes,
 }
 
 #[derive(Debug, Serialize, Deserialize)]

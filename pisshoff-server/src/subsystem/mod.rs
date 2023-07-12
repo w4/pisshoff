@@ -1,9 +1,10 @@
+use crate::server::Connection;
 use async_trait::async_trait;
-use pisshoff_types::audit::AuditLog;
 use thrussh::server::Session;
 use thrussh::ChannelId;
 
 pub mod sftp;
+pub mod shell;
 
 #[async_trait]
 pub trait Subsystem {
@@ -11,7 +12,7 @@ pub trait Subsystem {
 
     async fn data(
         &mut self,
-        audit_log: &mut AuditLog,
+        connection: &mut Connection,
         channel: ChannelId,
         data: &[u8],
         session: &mut Session,
