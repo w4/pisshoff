@@ -32,5 +32,6 @@ tracing-subscriber = { version = "0.3", features = ["env-filter"] }
 uuid = { version = "1.3", features = ["v4", "serde"] }
 
 [dev-dependencies]
-insta = "1.29"
+mockall = "0.11"
+insta = { version = "1.29", features = ["filters"] }
 test-case = "3.1"

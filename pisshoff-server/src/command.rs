@@ -6,18 +6,20 @@ mod scp;
 mod uname;
 mod whoami;
 
-use crate::server::Connection;
+use crate::server::{ConnectionState, ThrusshSession};
 use async_trait::async_trait;
 use itertools::Either;
+use std::fmt::Debug;
 use thrussh::{server::Session, ChannelId};
 
+#[derive(Debug)]
 pub enum CommandResult<T> {
     ReadStdin(T),
     Exit(u32),
     Close(u32),
 }
 
-impl<T> CommandResult<T> {
+impl<T: Debug> CommandResult<T> {
     fn map<N>(self, f: fn(T) -> N) -> CommandResult<N> {
         match self {
             Self::ReadStdin(val) => CommandResult::ReadStdin(f(val)),
@@ -25,23 +27,31 @@ impl<T> CommandResult<T> {
             Self::Close(v) => CommandResult::Close(v),
         }
     }
+
+    #[cfg(test)]
+    pub fn unwrap_stdin(self) -> T {
+        match self {
+            Self::ReadStdin(val) => val,
+            v => panic!("got {v:?}, expected ReadStdin"),
+        }
+    }
 }
 
 #[async_trait]
 pub trait Command: Sized {
-    async fn new(
-        connection: &mut Connection,
+    async fn new<S: ThrusshSession + Send>(
+        connection: &mut ConnectionState,
         params: &[String],
         channel: ChannelId,
-        session: &mut Session,
+        session: &mut S,
     ) -> CommandResult<Self>;
 
-    async fn stdin(
+    async fn stdin<S: ThrusshSession + Send>(
         self,
-        connection: &mut Connection,
+        connection: &mut ConnectionState,
         channel: ChannelId,
         data: &[u8],
-        session: &mut Session,
+        session: &mut S,
     ) -> CommandResult<Self>;
 }
 
@@ -54,7 +64,7 @@ macro_rules! define_commands {
 
         impl ConcreteCommand {
             pub async fn new(
-                connection: &mut Connection,
+                connection: &mut ConnectionState,
                 params: &[String],
                 channel: ChannelId,
                 session: &mut Session,
@@ -78,7 +88,7 @@ macro_rules! define_commands {
 
             pub async fn stdin(
                 self,
-                connection: &mut Connection,
+                connection: &mut ConnectionState,
                 channel: ChannelId,
                 data: &[u8],
                 session: &mut Session,

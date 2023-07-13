@@ -1,6 +1,6 @@
 use crate::{
     command::{Arg, Command, CommandResult},
-    server::Connection,
+    server::{ConnectionState, ThrusshSession},
 };
 use async_trait::async_trait;
 use bytes::{Buf, BytesMut};
@@ -12,7 +12,7 @@ use nom::{
 };
 use pisshoff_types::audit::{AuditLogAction, WriteFileEvent};
 use std::{path::PathBuf, str::FromStr};
-use thrussh::{server::Session, ChannelId};
+use thrussh::ChannelId;
 use tracing::warn;
 
 const HELP: &str = "usage: scp [-346ABCOpqRrsTv] [-c cipher] [-D sftp_server_path] [-F ssh_config]
@@ -33,11 +33,11 @@ pub struct Scp {
 
 #[async_trait]
 impl Command for Scp {
-    async fn new(
-        _connection: &mut Connection,
+    async fn new<S: ThrusshSession + Send>(
+        _connection: &mut ConnectionState,
         params: &[String],
         channel: ChannelId,
-        session: &mut Session,
+        session: &mut S,
     ) -> CommandResult<Self> {
         let mut path = None;
         let mut transfer = false;
@@ -80,12 +80,12 @@ impl Command for Scp {
         })
     }
 
-    async fn stdin(
+    async fn stdin<S: ThrusshSession + Send>(
         mut self,
-        connection: &mut Connection,
+        connection: &mut ConnectionState,
         channel: ChannelId,
         data: &[u8],
-        session: &mut Session,
+        session: &mut S,
     ) -> CommandResult<Self> {
         self.pending_data.extend_from_slice(data);
 
@@ -173,7 +173,7 @@ enum State {
     AwaitingSeparator,
 }
 
-#[derive(Debug)]
+#[derive(Debug, PartialEq, Eq)]
 #[allow(dead_code)]
 enum Receive<'a> {
     FileCopy {
@@ -276,5 +276,103 @@ impl<'a> Receive<'a> {
                 ))
             }
         }
+    }
+}
+
+#[cfg(test)]
+mod test {
+    use crate::{
+        command::{scp::Scp, Command},
+        server::{
+            test::{fake_channel_id, predicate::eq_string},
+            ConnectionState, MockThrusshSession,
+        },
+    };
+    use insta::assert_debug_snapshot;
+    use mockall::predicate::always;
+
+    mod packet_parser {
+        use crate::command::scp::Receive;
+
+        #[test]
+        fn file_copy() {
+            let (_, actual) = Receive::parse(b"C0777 1234 test.txt\n").unwrap();
+            let expected = Receive::FileCopy {
+                mode: "0777",
+                length: 1234,
+                file_name: "test.txt",
+            };
+
+            assert_eq!(actual, expected);
+        }
+
+        #[test]
+        fn directory_copy() {
+            let (_, actual) = Receive::parse(b"D0777 1234 test\n").unwrap();
+            let expected = Receive::DirectoryCopy {
+                mode: "0777",
+                length: 1234,
+                directory_name: "test",
+            };
+
+            assert_eq!(actual, expected);
+        }
+
+        #[test]
+        fn end_directory() {
+            let (_, actual) = Receive::parse(b"E\n").unwrap();
+            let expected = Receive::EndDirectory;
+
+            assert_eq!(actual, expected);
+        }
+
+        #[test]
+        fn access_time() {
+            let (_, actual) = Receive::parse(b"T123 444 555 666\n").unwrap();
+            let expected = Receive::AccessTime {
+                modified_time: 123,
+                modified_time_micros: 444,
+                access_time: 555,
+                access_time_micros: 666,
+            };
+
+            assert_eq!(actual, expected);
+        }
+    }
+
+    #[tokio::test]
+    async fn works() {
+        let mut session = MockThrusshSession::default();
+        let mut state = ConnectionState::mock();
+
+        session
+            .expect_data()
+            .with(always(), eq_string("\0"))
+            .returning(|_, _| ());
+
+        let out = Scp::new(
+            &mut state,
+            ["-t".to_string(), "hello".to_string()].as_slice(),
+            fake_channel_id(),
+            &mut session,
+        )
+        .await
+        .unwrap_stdin();
+
+        let _out = out
+            .stdin(
+                &mut state,
+                fake_channel_id(),
+                b"C0777 11 hello.txt\nhello world\0",
+                &mut session,
+            )
+            .await
+            .unwrap_stdin();
+
+        insta::with_settings!({filters => vec![
+            (r#"\bstart_offset: [^,]+"#, "start_offset: [stripped]")
+        ]}, {
+            assert_debug_snapshot!(state.audit_log());
+        });
     }
 }

@@ -1,6 +1,6 @@
 use crate::{
     command::{CommandResult, ConcreteCommand},
-    server::Connection,
+    server::ConnectionState,
     subsystem::Subsystem,
 };
 use async_trait::async_trait;
@@ -47,7 +47,7 @@ impl Subsystem for Shell {
 
     async fn data(
         &mut self,
-        connection: &mut Connection,
+        connection: &mut ConnectionState,
         channel: ChannelId,
         data: &[u8],
         session: &mut Session,

@@ -27,7 +27,7 @@ use std::{
 };
 use thrussh::{
     server::{Auth, Response, Session},
-    ChannelId, Pty, Sig,
+    ChannelId, CryptoVec, Pty, Sig,
 };
 use thrussh_keys::key::PublicKey;
 use tokio::sync::mpsc::UnboundedSender;
@@ -69,29 +69,51 @@ impl thrussh::server::Server for Server {
         Connection {
             span: info_span!("connection", ?peer_addr, %connection_id),
             server: self.clone(),
-            audit_log: AuditLog {
-                connection_id,
-                host: Cow::Borrowed(self.hostname),
-                peer_address: peer_addr,
-                ..AuditLog::default()
+            state: ConnectionState {
+                audit_log: AuditLog {
+                    connection_id,
+                    host: Cow::Borrowed(self.hostname),
+                    peer_address: peer_addr,
+                    ..AuditLog::default()
+                },
+                username: None,
+                file_system: None,
             },
-            username: None,
-            file_system: None,
             subsystem: HashMap::new(),
         }
     }
 }
 
-pub struct Connection {
-    span: Span,
-    server: Server,
+pub struct ConnectionState {
     audit_log: AuditLog,
     username: Option<String>,
     file_system: Option<FileSystem>,
-    subsystem: HashMap<ChannelId, Arc<Mutex<Subsystem>>>,
 }
 
-impl Connection {
+impl ConnectionState {
+    #[cfg(test)]
+    pub fn mock() -> Self {
+        use std::net::{IpAddr, Ipv4Addr};
+
+        ConnectionState {
+            audit_log: AuditLog {
+                connection_id: uuid::Uuid::from_bytes([
+                    1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16,
+                ]),
+                host: Cow::Borrowed("hello world"),
+                peer_address: Some(SocketAddr::new(
+                    IpAddr::V4(Ipv4Addr::new(127, 0, 0, 1)),
+                    1234,
+                )),
+                ..AuditLog::default()
+            },
+            username: None,
+            file_system: None,
+        }
+    }
+}
+
+impl ConnectionState {
     pub fn username(&self) -> &str {
         self.username.as_deref().unwrap_or("root")
     }
@@ -107,9 +129,18 @@ impl Connection {
     pub fn audit_log(&mut self) -> &mut AuditLog {
         &mut self.audit_log
     }
+}
 
+pub struct Connection {
+    span: Span,
+    server: Server,
+    state: ConnectionState,
+    subsystem: HashMap<ChannelId, Arc<Mutex<Subsystem>>>,
+}
+
+impl Connection {
     fn try_login(&mut self, user: &str, password: &str) -> bool {
-        self.username = Some(user.to_string());
+        self.state.username = Some(user.to_string());
 
         let res = if self
             .server
@@ -131,12 +162,14 @@ impl Connection {
             false
         };
 
-        self.audit_log.push_action(AuditLogAction::LoginAttempt(
-            LoginAttemptEvent::UsernamePassword {
-                username: Box::from(user),
-                password: Box::from(password),
-            },
-        ));
+        self.state
+            .audit_log
+            .push_action(AuditLogAction::LoginAttempt(
+                LoginAttemptEvent::UsernamePassword {
+                    username: Box::from(user),
+                    password: Box::from(password),
+                },
+            ));
 
         res
     }
@@ -200,7 +233,8 @@ impl thrussh::server::Handler for Connection {
         let kind = public_key.name();
         let fingerprint = public_key.fingerprint();
 
-        self.audit_log
+        self.state
+            .audit_log
             .push_action(AuditLogAction::LoginAttempt(LoginAttemptEvent::PublicKey {
                 kind: Cow::Borrowed(kind),
                 fingerprint: Box::from(fingerprint),
@@ -285,7 +319,8 @@ impl thrussh::server::Handler for Connection {
         let span = info_span!(parent: &self.span, "channel_open_x11");
         let _entered = span.enter();
 
-        self.audit_log
+        self.state
+            .audit_log
             .push_action(AuditLogAction::OpenX11(OpenX11Event {
                 originator_address: Box::from(originator_address),
                 originator_port,
@@ -307,7 +342,8 @@ impl thrussh::server::Handler for Connection {
         let span = info_span!(parent: &self.span, "channel_open_direct_tcpip");
         let _entered = span.enter();
 
-        self.audit_log
+        self.state
+            .audit_log
             .push_action(AuditLogAction::OpenDirectTcpIp(OpenDirectTcpIpEvent {
                 host_to_connect: Box::from(host_to_connect),
                 port_to_connect,
@@ -332,10 +368,14 @@ impl thrussh::server::Handler for Connection {
 
             match &mut *subsystem {
                 Subsystem::Shell(ref mut inner) => {
-                    inner.data(&mut self, channel, &data, &mut session).await;
+                    inner
+                        .data(&mut self.state, channel, &data, &mut session)
+                        .await;
                 }
                 Subsystem::Sftp(ref mut inner) => {
-                    inner.data(&mut self, channel, &data, &mut session).await;
+                    inner
+                        .data(&mut self.state, channel, &data, &mut session)
+                        .await;
                 }
             }
 
@@ -367,7 +407,8 @@ impl thrussh::server::Handler for Connection {
         let span = info_span!(parent: &self.span, "window_adjusted");
         let _entered = span.enter();
 
-        self.audit_log
+        self.state
+            .audit_log
             .push_action(AuditLogAction::WindowAdjusted(WindowAdjustedEvent {
                 new_size: new_window_size,
             }));
@@ -396,7 +437,8 @@ impl thrussh::server::Handler for Connection {
         let span = info_span!(parent: &self.span, "pty_request");
         let _entered = span.enter();
 
-        self.audit_log
+        self.state
+            .audit_log
             .push_action(AuditLogAction::PtyRequest(PtyRequestEvent {
                 term: Box::from(term),
                 col_width,
@@ -428,7 +470,8 @@ impl thrussh::server::Handler for Connection {
         let span = info_span!(parent: &self.span, "x11_request");
         let _entered = span.enter();
 
-        self.audit_log
+        self.state
+            .audit_log
             .push_action(AuditLogAction::X11Request(X11RequestEvent {
                 single_connection,
                 x11_auth_protocol: Box::from(x11_auth_protocol),
@@ -450,7 +493,8 @@ impl thrussh::server::Handler for Connection {
         let span = info_span!(parent: &self.span, "env_request");
         let _entered = span.enter();
 
-        self.audit_log
+        self.state
+            .audit_log
             .environment_variables
             .push((Box::from(variable_name), Box::from(variable_value)));
 
@@ -462,7 +506,9 @@ impl thrussh::server::Handler for Connection {
         let span = info_span!(parent: &self.span, "shell_request");
         let _entered = span.enter();
 
-        self.audit_log.push_action(AuditLogAction::ShellRequested);
+        self.state
+            .audit_log
+            .push_action(AuditLogAction::ShellRequested);
 
         let shell = Shell::new(true, channel, &mut session);
         self.subsystem
@@ -485,7 +531,9 @@ impl thrussh::server::Handler for Connection {
 
         async move {
             let mut shell = Shell::new(false, channel, &mut session);
-            shell.data(&mut self, channel, &data, &mut session).await;
+            shell
+                .data(&mut self.state, channel, &data, &mut session)
+                .await;
 
             self.subsystem
                 .insert(channel, Arc::new(Mutex::new(Subsystem::Shell(shell))));
@@ -506,7 +554,8 @@ impl thrussh::server::Handler for Connection {
         let span = info_span!(parent: &self.span, "subsystem_request");
         let _entered = span.enter();
 
-        self.audit_log
+        self.state
+            .audit_log
             .push_action(AuditLogAction::SubsystemRequest(SubsystemRequestEvent {
                 name: Box::from(name),
             }));
@@ -539,7 +588,8 @@ impl thrussh::server::Handler for Connection {
         let span = info_span!(parent: &self.span, "window_change_request");
         let _entered = span.enter();
 
-        self.audit_log
+        self.state
+            .audit_log
             .push_action(AuditLogAction::WindowChangeRequest(
                 WindowChangeRequestEvent {
                     col_width,
@@ -562,7 +612,8 @@ impl thrussh::server::Handler for Connection {
         let span = info_span!(parent: &self.span, "signal");
         let _entered = span.enter();
 
-        self.audit_log
+        self.state
+            .audit_log
             .push_action(AuditLogAction::Signal(SignalEvent {
                 name: format!("{signal_name:?}").into(),
             }));
@@ -574,7 +625,8 @@ impl thrussh::server::Handler for Connection {
         let span = info_span!(parent: &self.span, "tcpip_forward");
         let _entered = span.enter();
 
-        self.audit_log
+        self.state
+            .audit_log
             .push_action(AuditLogAction::TcpIpForward(TcpIpForwardEvent {
                 address: Box::from(address),
                 port,
@@ -594,7 +646,8 @@ impl thrussh::server::Handler for Connection {
         let span = info_span!(parent: &self.span, "cancel_tcpip_forward");
         let _entered = span.enter();
 
-        self.audit_log
+        self.state
+            .audit_log
             .push_action(AuditLogAction::CancelTcpIpForward(TcpIpForwardEvent {
                 address: Box::from(address),
                 port,
@@ -616,7 +669,7 @@ impl Drop for Connection {
         let _res = self
             .server
             .audit_send
-            .send(std::mem::take(&mut self.audit_log));
+            .send(std::mem::take(&mut self.state.audit_log));
     }
 }
 
@@ -624,6 +677,17 @@ impl Drop for Connection {
 pub enum Subsystem {
     Shell(subsystem::shell::Shell),
     Sftp(subsystem::sftp::Sftp),
+}
+
+#[cfg_attr(test, mockall::automock)]
+pub trait ThrusshSession {
+    fn data(&mut self, channel: ChannelId, data: CryptoVec);
+}
+
+impl ThrusshSession for Session {
+    fn data(&mut self, channel: ChannelId, data: CryptoVec) {
+        Session::data(self, channel, data);
+    }
 }
 
 type HandlerResult<T> = Result<T, <Connection as thrussh::server::Handler>::Error>;
@@ -667,5 +731,23 @@ impl<T, E, F: Future<Output = Result<T, E>> + Unpin> Future for ServerFuture<E, 
 
     fn poll(mut self: Pin<&mut Self>, cx: &mut Context<'_>) -> Poll<Self::Output> {
         Pin::new(&mut self.0).poll(cx)
+    }
+}
+
+#[cfg(test)]
+pub mod test {
+    use thrussh::ChannelId;
+
+    pub fn fake_channel_id() -> ChannelId {
+        unsafe { std::mem::transmute(0_u32) }
+    }
+
+    pub mod predicate {
+        use mockall::{predicate, Predicate};
+        use thrussh::CryptoVec;
+
+        pub fn eq_string(s: &str) -> impl Predicate<CryptoVec> + '_ {
+            predicate::function(|v: &CryptoVec| &**v == s.as_bytes())
+        }
     }
 }

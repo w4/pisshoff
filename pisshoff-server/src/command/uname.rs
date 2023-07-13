@@ -1,10 +1,10 @@
 use crate::{
     command::{Arg, Command, CommandResult},
-    server::Connection,
+    server::{ConnectionState, ThrusshSession},
 };
 use async_trait::async_trait;
 use bitflags::bitflags;
-use thrussh::{server::Session, ChannelId};
+use thrussh::ChannelId;
 
 bitflags! {
     #[derive(Clone, Copy, Debug, PartialEq, Eq, Hash)]
@@ -56,11 +56,11 @@ pub struct Uname {}
 
 #[async_trait]
 impl Command for Uname {
-    async fn new(
-        _connection: &mut Connection,
+    async fn new<S: ThrusshSession + Send>(
+        _connection: &mut ConnectionState,
         params: &[String],
         channel: ChannelId,
-        session: &mut Session,
+        session: &mut S,
     ) -> CommandResult<Self> {
         let (out, exit_code) = execute(params);
 
@@ -68,12 +68,12 @@ impl Command for Uname {
         CommandResult::Exit(exit_code)
     }
 
-    async fn stdin(
+    async fn stdin<S: ThrusshSession + Send>(
         self,
-        _connection: &mut Connection,
+        _connection: &mut ConnectionState,
         _channel: ChannelId,
         _data: &[u8],
-        _session: &mut Session,
+        _session: &mut S,
     ) -> CommandResult<Self> {
         CommandResult::Exit(0)
     }

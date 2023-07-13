@@ -1,4 +1,4 @@
-use crate::{server::Connection, subsystem::Subsystem};
+use crate::{server::ConnectionState, subsystem::Subsystem};
 use async_trait::async_trait;
 use bytes::Bytes;
 use nom::{
@@ -29,7 +29,7 @@ impl Subsystem for Sftp {
     #[allow(clippy::too_many_lines)]
     async fn data(
         &mut self,
-        connection: &mut Connection,
+        connection: &mut ConnectionState,
         channel: ChannelId,
         data: &[u8],
         session: &mut Session,

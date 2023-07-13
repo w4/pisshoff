@@ -1,4 +1,4 @@
-use crate::server::Connection;
+use crate::server::ConnectionState;
 use async_trait::async_trait;
 use thrussh::server::Session;
 use thrussh::ChannelId;
@@ -12,7 +12,7 @@ pub trait Subsystem {
 
     async fn data(
         &mut self,
-        connection: &mut Connection,
+        connection: &mut ConnectionState,
         channel: ChannelId,
         data: &[u8],
         session: &mut Session,
