@@ -185,8 +185,55 @@ $ cat audit.log | tail -n 2 | jq
 
 ## Running the server
 
+### From source
+
 An [example configuration][] is provided within the repository, running the server is as simple
 as building the binary using [`cargo build --release`][] and calling `./pisshoff-server -c config.toml`.
 
 [example configuration]: https://github.com/w4/pisshoff/blob/master/pisshoff-server/config.toml
 [`cargo build --release`]: https://www.rust-lang.org/
+
+### NixOS
+
+Running pisshoff on NixOS is extremely simple, simply import the module into your flake.nix and use the provided service:
+
+```nix
+{
+  inputs = {
+    nixpkgs.url = "github:NixOS/nixpkgs/nixos-23.05";
+
+    pisshoff = {
+      url = "github:w4/pisshoff";
+      inputs.nixpkgs = "nixpkgs";
+    };
+  };
+
+  outputs = { nixpkgs, ... }: {
+    nixosConfigurations.mySystem = nixpkgs.lib.nixosSystem {
+      modules = [
+        pisshoff.nixosModules.default
+        {
+          services.pisshoff = {
+            enable = true;
+            settings = {
+              listen-address = "127.0.0.1:2233";
+              access-probability = "0.2";
+              audit-output-file = "/var/log/pisshoff/audit.jsonl";
+            };
+          };
+        }
+        ...
+      ];
+    };
+  };
+}
+```
+
+### Docker
+
+Running pisshoff in Docker is also simple:
+
+```bash
+$ docker run -d --name pisshoff ghcr.io/w4/pisshoff:master
+$ docker exec -it pisshoff tail -f audit.jsonl
+```
