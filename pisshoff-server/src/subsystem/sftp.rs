@@ -406,7 +406,10 @@ impl<'a> WirePacket<'a> {
         )(rest)?;
 
         let Some(typ) = PacketType::from_repr(typ) else {
-           return Err(nom::Err::Failure(nom::error::Error::new(rest, nom::error::ErrorKind::Verify)));
+            return Err(nom::Err::Failure(nom::error::Error::new(
+                rest,
+                nom::error::ErrorKind::Verify,
+            )));
         };
 
         Ok((

@@ -18,7 +18,7 @@ impl Command for Exit {
         _session: &mut S,
     ) -> CommandResult<Self> {
         let exit_status = params
-            .get(0)
+            .first()
             .map(String::as_str)
             .map_or(Ok(0), u32::from_str)
             .unwrap_or(2);

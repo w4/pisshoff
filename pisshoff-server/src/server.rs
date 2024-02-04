@@ -78,6 +78,7 @@ impl thrussh::server::Server for Server {
                 },
                 username: None,
                 file_system: None,
+                environment: HashMap::new(),
             },
             subsystem: HashMap::new(),
         }
@@ -88,6 +89,7 @@ pub struct ConnectionState {
     audit_log: AuditLog,
     username: Option<String>,
     file_system: Option<FileSystem>,
+    environment: HashMap<Cow<'static, [u8]>, Cow<'static, [u8]>>,
 }
 
 impl ConnectionState {
@@ -109,6 +111,7 @@ impl ConnectionState {
             },
             username: None,
             file_system: None,
+            environment: HashMap::new(),
         }
     }
 }
@@ -128,6 +131,10 @@ impl ConnectionState {
 
     pub fn audit_log(&mut self) -> &mut AuditLog {
         &mut self.audit_log
+    }
+
+    pub fn environment(&self) -> &HashMap<Cow<'static, [u8]>, Cow<'static, [u8]>> {
+        &self.environment
     }
 }
 
@@ -673,7 +680,7 @@ impl Drop for Connection {
     }
 }
 
-#[derive(Debug, Clone)]
+#[derive(Debug)]
 pub enum Subsystem {
     Shell(subsystem::shell::Shell),
     Sftp(subsystem::sftp::Sftp),
@@ -682,11 +689,63 @@ pub enum Subsystem {
 #[cfg_attr(test, mockall::automock)]
 pub trait ThrusshSession {
     fn data(&mut self, channel: ChannelId, data: CryptoVec);
+
+    fn redirected(&self) -> bool {
+        false
+    }
 }
 
 impl ThrusshSession for Session {
     fn data(&mut self, channel: ChannelId, data: CryptoVec) {
         Session::data(self, channel, data);
+    }
+}
+
+impl ThrusshSession for &mut Session {
+    fn data(&mut self, channel: ChannelId, data: CryptoVec) {
+        Session::data(self, channel, data);
+    }
+}
+
+pub enum EitherSession<A, B> {
+    L(A),
+    R(B),
+}
+
+impl<A: ThrusshSession, B: ThrusshSession> ThrusshSession for EitherSession<A, B> {
+    fn data(&mut self, channel: ChannelId, data: CryptoVec) {
+        match self {
+            Self::L(a) => a.data(channel, data),
+            Self::R(b) => b.data(channel, data),
+        }
+    }
+
+    fn redirected(&self) -> bool {
+        match self {
+            Self::L(a) => a.redirected(),
+            Self::R(b) => b.redirected(),
+        }
+    }
+}
+
+pub struct StdoutCaptureSession<'a> {
+    /// Captured stdout
+    out: &'a mut Vec<u8>,
+}
+
+impl<'a> StdoutCaptureSession<'a> {
+    pub fn new(out: &'a mut Vec<u8>) -> Self {
+        Self { out }
+    }
+}
+
+impl ThrusshSession for StdoutCaptureSession<'_> {
+    fn data(&mut self, _channel: ChannelId, data: CryptoVec) {
+        self.out.extend_from_slice(data.as_ref());
+    }
+
+    fn redirected(&self) -> bool {
+        true
     }
 }
 

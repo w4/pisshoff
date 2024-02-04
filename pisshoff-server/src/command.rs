@@ -9,13 +9,17 @@ mod whoami;
 use crate::server::{ConnectionState, ThrusshSession};
 use async_trait::async_trait;
 use itertools::Either;
+use std::borrow::Cow;
 use std::fmt::Debug;
-use thrussh::{server::Session, ChannelId};
+use thrussh::ChannelId;
 
 #[derive(Debug)]
 pub enum CommandResult<T> {
+    /// Wait for stdin
     ReadStdin(T),
+    /// Exit process
     Exit(u32),
+    /// Close session
     Close(u32),
 }
 
@@ -55,6 +59,34 @@ pub trait Command: Sized {
     ) -> CommandResult<Self>;
 }
 
+#[derive(PartialEq, Eq, Debug)]
+pub struct PartialCommand<'a> {
+    exec: Option<Cow<'a, [u8]>>,
+    params: Vec<Cow<'a, [u8]>>,
+}
+
+impl<'a> PartialCommand<'a> {
+    pub fn new(exec: Option<Cow<'a, [u8]>>, params: Vec<Cow<'a, [u8]>>) -> Self {
+        Self { exec, params }
+    }
+
+    pub async fn into_concrete_command<S: ThrusshSession + Send>(
+        self,
+        connection: &mut ConnectionState,
+        channel: ChannelId,
+        session: &mut S,
+    ) -> CommandResult<ConcreteCommand> {
+        // TODO: make commands take byte slices
+        let args = self
+            .params
+            .iter()
+            .map(|v| String::from_utf8_lossy(v).to_string())
+            .collect::<Vec<_>>();
+
+        ConcreteCommand::new(connection, self.exec.as_deref(), &args, channel, session).await
+    }
+}
+
 macro_rules! define_commands {
     ($($name:ident($ty:ty) = $command:expr),*) => {
         #[derive(Debug, Clone)]
@@ -63,35 +95,36 @@ macro_rules! define_commands {
         }
 
         impl ConcreteCommand {
-            pub async fn new(
+            pub async fn new<S: ThrusshSession + Send>(
                 connection: &mut ConnectionState,
+                exec: Option<&[u8]>,
                 params: &[String],
                 channel: ChannelId,
-                session: &mut Session,
+                session: &mut S,
             ) -> CommandResult<Self> {
-                let Some(command) = params.get(0) else {
+                let Some(command) = exec else {
                     return CommandResult::Exit(0);
                 };
 
-                match command.as_str() {
-                    $($command => <$ty as Command>::new(connection, &params[1..], channel, session).await.map(Self::$name),)*
+                match command {
+                    $($command => <$ty as Command>::new(connection, &params, channel, session).await.map(Self::$name),)*
                     other => {
                         // TODO: fix stderr displaying out of order
                         session.data(
                             channel,
-                            format!("bash: {other}: command not found\n").into(),
+                            format!("bash: {}: command not found\n", String::from_utf8_lossy(other)).into(),
                         );
                         CommandResult::Exit(1)
                     }
                 }
             }
 
-            pub async fn stdin(
+            pub async fn stdin<S: ThrusshSession + Send>(
                 self,
                 connection: &mut ConnectionState,
                 channel: ChannelId,
                 data: &[u8],
-                session: &mut Session,
+                session: &mut S,
             ) -> CommandResult<Self> {
                 match self {
                     $(Self::$name(cmd) => {
@@ -107,13 +140,13 @@ macro_rules! define_commands {
 }
 
 define_commands! {
-    Echo(echo::Echo) = "echo",
-    Exit(exit::Exit) = "exit",
-    Ls(ls::Ls) = "ls",
-    Pwd(pwd::Pwd) = "pwd",
-    Scp(scp::Scp) = "scp",
-    Uname(uname::Uname) = "uname",
-    Whoami(whoami::Whoami) = "whoami"
+    Echo(echo::Echo) = b"echo",
+    Exit(exit::Exit) = b"exit",
+    Ls(ls::Ls) = b"ls",
+    Pwd(pwd::Pwd) = b"pwd",
+    Scp(scp::Scp) = b"scp",
+    Uname(uname::Uname) = b"uname",
+    Whoami(whoami::Whoami) = b"whoami"
 }
 
 #[derive(Debug, Copy, Clone, PartialEq, Eq)]

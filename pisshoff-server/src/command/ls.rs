@@ -22,7 +22,7 @@ impl Command for Ls {
         } else if params.len() == 1 {
             connection
                 .file_system()
-                .ls(Some(params.get(0).unwrap()))
+                .ls(Some(params.first().unwrap()))
                 .join("  ")
         } else {
             let mut out = String::new();

@@ -17,7 +17,12 @@ impl Command for Echo {
         channel: ChannelId,
         session: &mut S,
     ) -> CommandResult<Self> {
-        session.data(channel, format!("{}\n", params.iter().join(" ")).into());
+        let suffix = if session.redirected() { "" } else { "\n" };
+
+        session.data(
+            channel,
+            format!("{}{suffix}", params.iter().join(" ")).into(),
+        );
 
         CommandResult::Exit(0)
     }
@@ -57,6 +62,8 @@ mod test {
             .once()
             .with(always(), eq_string(output))
             .returning(|_, _| ());
+
+        session.expect_redirected().returning(|| false);
 
         let out = Echo::new(
             &mut ConnectionState::mock(),

@@ -38,6 +38,7 @@ impl Default for AuditLog {
     }
 }
 
+#[allow(clippy::missing_fields_in_debug)]
 impl Debug for AuditLog {
     fn fmt(&self, f: &mut Formatter<'_>) -> std::fmt::Result {
         f.debug_struct("AuditLog")

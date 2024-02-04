@@ -50,7 +50,7 @@ pub fn start_audit_writer(
                 _ = &mut shutdown_recv => {
                     shutdown = true;
                 }
-                _ = tokio::time::sleep(Duration::from_secs(5)), if !writer.buffer().is_empty() => {
+                () = tokio::time::sleep(Duration::from_secs(5)), if !writer.buffer().is_empty() => {
                     debug!("Flushing audits to disk");
                     writer.flush().await?;
                 }
