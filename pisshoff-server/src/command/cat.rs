@@ -79,7 +79,7 @@ impl Command for Cat {
 mod test {
     use std::path::Path;
 
-    use mockall::predicate::{self, always};
+    use mockall::predicate::always;
 
     use crate::{
         command::{cat::Cat, Command, CommandResult},

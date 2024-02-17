@@ -316,7 +316,7 @@ mod test {
             assert!(rest.is_empty());
 
             let state = ConnectionState::mock();
-            let mut command = Iter::new(s.into());
+            let mut command = Iter::new(s);
 
             // once we step we should be requested to execute `echo hello` for subbing
             let step = command.step(state.environment(), None);
@@ -346,7 +346,7 @@ mod test {
             assert!(rest.is_empty());
 
             let state = ConnectionState::mock();
-            let mut command = Iter::new(s.into());
+            let mut command = Iter::new(s);
 
             // once we step we should be requested to execute `echo the whole` for subbing
             let step = command.step(state.environment(), None);
@@ -504,7 +504,7 @@ mod test {
                     ParsedPart::Break,
                     ParsedPart::String(Cow::Borrowed(b"hello")),
                 ])
-            )
+            );
         }
     }
 
@@ -557,7 +557,7 @@ mod test {
                     ])),
                     ParsedPart::String(Cow::Borrowed(b" test")),
                 ]
-            )
+            );
         }
 
         #[test]

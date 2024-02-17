@@ -373,7 +373,7 @@ mod test {
             .unwrap_stdin();
 
         insta::with_settings!({filters => vec![
-            (r#"\bstart_offset: [^,]+"#, "start_offset: [stripped]")
+            (r"\bstart_offset: [^,]+", "start_offset: [stripped]")
         ]}, {
             assert_debug_snapshot!(state.audit_log());
         });
