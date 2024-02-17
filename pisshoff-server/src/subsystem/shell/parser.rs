@@ -1,4 +1,5 @@
-use crate::{command::PartialCommand, subsystem::shell::IResult};
+use std::{borrow::Cow, collections::HashMap};
+
 use nom::{
     branch::alt,
     bytes::complete::{escaped_transform, is_not, tag, take, take_until, take_while1},
@@ -9,7 +10,8 @@ use nom::{
     sequence::{delimited, preceded},
     AsChar,
 };
-use std::{borrow::Cow, collections::HashMap};
+
+use crate::{command::PartialCommand, subsystem::shell::IResult};
 
 #[derive(Debug, PartialEq, Eq)]
 pub enum IterState<'a> {
@@ -300,10 +302,13 @@ fn atoi(v: &[u8]) -> Option<u8> {
 #[cfg(test)]
 mod test {
     mod iter {
-        use crate::command::PartialCommand;
-        use crate::server::ConnectionState;
-        use crate::subsystem::shell::parser::{tokenize, Iter, IterState};
         use std::borrow::Cow;
+
+        use crate::{
+            command::PartialCommand,
+            server::ConnectionState,
+            subsystem::shell::parser::{tokenize, Iter, IterState},
+        };
 
         #[test]
         fn single_nested() {
@@ -377,8 +382,9 @@ mod test {
     }
 
     mod parse_command {
-        use crate::subsystem::shell::parser::{tokenize, Expansion, ParsedPart, RedirectionTo};
         use std::borrow::Cow;
+
+        use crate::subsystem::shell::parser::{tokenize, Expansion, ParsedPart, RedirectionTo};
 
         #[test]
         fn messed_up() {
@@ -450,8 +456,9 @@ mod test {
     }
 
     mod parse_expansion {
-        use crate::subsystem::shell::parser::{parse_expansion, Expansion, ParsedPart};
         use std::borrow::Cow;
+
+        use crate::subsystem::shell::parser::{parse_expansion, Expansion, ParsedPart};
 
         #[test]
         fn double_dollar() {
@@ -531,8 +538,9 @@ mod test {
     }
 
     mod parse_double_quoted {
-        use crate::subsystem::shell::parser::{parse_double_quoted, Expansion, ParsedPart};
         use std::borrow::Cow;
+
+        use crate::subsystem::shell::parser::{parse_double_quoted, Expansion, ParsedPart};
 
         #[test]
         fn with_expansion() {

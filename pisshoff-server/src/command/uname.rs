@@ -1,10 +1,11 @@
+use async_trait::async_trait;
+use bitflags::bitflags;
+use thrussh::ChannelId;
+
 use crate::{
     command::{Arg, Command, CommandResult},
     server::{ConnectionState, ThrusshSession},
 };
-use async_trait::async_trait;
-use bitflags::bitflags;
-use thrussh::ChannelId;
 
 bitflags! {
     #[derive(Clone, Copy, Debug, PartialEq, Eq, Hash)]
@@ -181,8 +182,9 @@ pub fn execute(params: &[String]) -> (String, u32) {
 
 #[cfg(test)]
 mod test {
-    use crate::command::uname::execute;
     use test_case::test_case;
+
+    use crate::command::uname::execute;
 
     #[test_case("", 0; "none")]
     #[test_case("-a", 0; "all")]

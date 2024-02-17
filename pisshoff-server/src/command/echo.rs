@@ -1,10 +1,11 @@
+use async_trait::async_trait;
+use itertools::Itertools;
+use thrussh::ChannelId;
+
 use crate::{
     command::{Command, CommandResult},
     server::{ConnectionState, ThrusshSession},
 };
-use async_trait::async_trait;
-use itertools::Itertools;
-use thrussh::ChannelId;
 
 #[derive(Debug, Clone)]
 pub struct Echo {}
@@ -40,6 +41,9 @@ impl Command for Echo {
 
 #[cfg(test)]
 mod test {
+    use mockall::predicate::always;
+    use test_case::test_case;
+
     use crate::{
         command::{echo::Echo, Command, CommandResult},
         server::{
@@ -47,8 +51,6 @@ mod test {
             ConnectionState, MockThrusshSession,
         },
     };
-    use mockall::predicate::always;
-    use test_case::test_case;
 
     #[test_case(&[], "\n"; "no parameters")]
     #[test_case(&["hello"], "hello\n"; "single parameter")]

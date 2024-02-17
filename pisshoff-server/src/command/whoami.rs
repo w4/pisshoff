@@ -1,9 +1,10 @@
+use async_trait::async_trait;
+use thrussh::ChannelId;
+
 use crate::{
     command::{Command, CommandResult},
     server::{ConnectionState, ThrusshSession},
 };
-use async_trait::async_trait;
-use thrussh::ChannelId;
 
 #[derive(Debug, Clone)]
 pub struct Whoami {}
@@ -33,6 +34,8 @@ impl Command for Whoami {
 
 #[cfg(test)]
 mod test {
+    use mockall::predicate::always;
+
     use crate::{
         command::{whoami::Whoami, Command, CommandResult},
         server::{
@@ -40,7 +43,6 @@ mod test {
             ConnectionState, MockThrusshSession,
         },
     };
-    use mockall::predicate::always;
 
     #[tokio::test]
     async fn works() {

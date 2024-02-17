@@ -1,21 +1,3 @@
-use crate::{
-    audit::{
-        AuditLog, AuditLogAction, LoginAttemptEvent, OpenDirectTcpIpEvent, OpenX11Event,
-        PtyRequestEvent, X11RequestEvent,
-    },
-    audit::{
-        SignalEvent, SubsystemRequestEvent, TcpIpForwardEvent, WindowAdjustedEvent,
-        WindowChangeRequestEvent,
-    },
-    config::Config,
-    file_system::FileSystem,
-    state::State,
-    subsystem::{self, shell::Shell, Subsystem as SubsystemTrait},
-};
-use futures::{
-    future::{BoxFuture, InspectErr},
-    FutureExt, TryFutureExt,
-};
 use std::{
     borrow::Cow,
     collections::HashMap,
@@ -25,14 +7,30 @@ use std::{
     sync::Arc,
     task::{Context, Poll},
 };
+
+use futures::{
+    future::{BoxFuture, InspectErr},
+    FutureExt, TryFutureExt,
+};
 use thrussh::{
     server::{Auth, Response, Session},
     ChannelId, CryptoVec, Pty, Sig,
 };
 use thrussh_keys::key::PublicKey;
-use tokio::sync::mpsc::UnboundedSender;
-use tokio::sync::Mutex;
+use tokio::sync::{mpsc::UnboundedSender, Mutex};
 use tracing::{debug, error, info, info_span, instrument::Instrumented, Instrument, Span};
+
+use crate::{
+    audit::{
+        AuditLog, AuditLogAction, LoginAttemptEvent, OpenDirectTcpIpEvent, OpenX11Event,
+        PtyRequestEvent, SignalEvent, SubsystemRequestEvent, TcpIpForwardEvent,
+        WindowAdjustedEvent, WindowChangeRequestEvent, X11RequestEvent,
+    },
+    config::Config,
+    file_system::FileSystem,
+    state::State,
+    subsystem::{self, shell::Shell, Subsystem as SubsystemTrait},
+};
 
 pub static KEYBOARD_INTERACTIVE_PROMPT: &[(Cow<'static, str>, bool)] =
     &[(Cow::Borrowed("Password: "), false)];

@@ -1,8 +1,7 @@
+use std::{io::ErrorKind, net::SocketAddr, path::PathBuf, sync::Arc};
+
 use clap::Parser;
 use serde::{de::DeserializeOwned, Deserialize};
-use std::path::PathBuf;
-use std::sync::Arc;
-use std::{io::ErrorKind, net::SocketAddr};
 
 /// Parser for command line arguments, these arguments can also be passed via capitalised env vars
 /// of the same name.

@@ -1,7 +1,5 @@
-use crate::{
-    command::{Arg, Command, CommandResult},
-    server::{ConnectionState, ThrusshSession},
-};
+use std::{path::PathBuf, str::FromStr};
+
 use async_trait::async_trait;
 use bytes::{Buf, BytesMut};
 use nom::{
@@ -11,9 +9,13 @@ use nom::{
     IResult,
 };
 use pisshoff_types::audit::{AuditLogAction, WriteFileEvent};
-use std::{path::PathBuf, str::FromStr};
 use thrussh::ChannelId;
 use tracing::warn;
+
+use crate::{
+    command::{Arg, Command, CommandResult},
+    server::{ConnectionState, ThrusshSession},
+};
 
 const HELP: &str = "usage: scp [-346ABCOpqRrsTv] [-c cipher] [-D sftp_server_path] [-F ssh_config]
            [-i identity_file] [-J destination] [-l limit] [-o ssh_option]
@@ -115,8 +117,8 @@ impl Command for Scp {
                             self.pending_data
                                 .advance(self.pending_data.len() - rest.len());
 
-                            // signal to the client we received their message and we're now listening for
-                            // more data
+                            // signal to the client we received their message and we're now
+                            // listening for more data
                             session.data(channel, SUCCESS.to_string().into());
 
                             state
@@ -150,8 +152,8 @@ impl Command for Scp {
                     if self.pending_data.starts_with(&[0]) {
                         self.pending_data.advance(1);
 
-                        // signal to the client we received their message and we're now listening for
-                        // more data
+                        // signal to the client we received their message and we're now listening
+                        // for more data
                         session.data(channel, SUCCESS.to_string().into());
                     }
 
@@ -281,6 +283,9 @@ impl<'a> Receive<'a> {
 
 #[cfg(test)]
 mod test {
+    use insta::assert_debug_snapshot;
+    use mockall::predicate::always;
+
     use crate::{
         command::{scp::Scp, Command},
         server::{
@@ -288,8 +293,6 @@ mod test {
             ConnectionState, MockThrusshSession,
         },
     };
-    use insta::assert_debug_snapshot;
-    use mockall::predicate::always;
 
     mod packet_parser {
         use crate::command::scp::Receive;

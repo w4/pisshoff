@@ -1,7 +1,8 @@
 #![deny(clippy::pedantic)]
 #![allow(clippy::module_name_repetitions)]
 
-use crate::config::Args;
+use std::sync::Arc;
+
 use clap::Parser;
 use deadpool_postgres::{
     tokio_postgres::{NoTls, Statement, Transaction},
@@ -9,11 +10,12 @@ use deadpool_postgres::{
 };
 use futures::{StreamExt, TryFutureExt};
 use pisshoff_types::audit::{AuditLog, AuditLogEvent};
-use std::sync::Arc;
 use tokio::net::{UnixListener, UnixStream};
 use tokio_util::codec::{Decoder, LinesCodec};
 use tracing::{error, info};
 use tracing_subscriber::EnvFilter;
+
+use crate::config::Args;
 
 mod config;
 

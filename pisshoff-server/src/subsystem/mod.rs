@@ -1,7 +1,7 @@
-use crate::server::ConnectionState;
 use async_trait::async_trait;
-use thrussh::server::Session;
-use thrussh::ChannelId;
+use thrussh::{server::Session, ChannelId};
+
+use crate::server::ConnectionState;
 
 pub mod sftp;
 pub mod shell;

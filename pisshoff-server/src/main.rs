@@ -1,11 +1,11 @@
 #![deny(clippy::pedantic)]
 #![allow(clippy::module_name_repetitions)]
 
-use crate::{config::Args, server::Server};
+use std::sync::Arc;
+
 use anyhow::anyhow;
 use clap::Parser;
 use futures::FutureExt;
-use std::sync::Arc;
 use thrussh::MethodSet;
 use tokio::{
     signal::unix::SignalKind,
@@ -13,6 +13,8 @@ use tokio::{
 };
 use tracing::{error, info};
 use tracing_subscriber::EnvFilter;
+
+use crate::{config::Args, server::Server};
 
 mod audit;
 mod command;

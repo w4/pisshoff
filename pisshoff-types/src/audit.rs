@@ -1,11 +1,12 @@
-use bytes::Bytes;
-use serde::{Deserialize, Serialize};
-use std::borrow::Cow;
 use std::{
+    borrow::Cow,
     fmt::{Debug, Formatter},
     net::SocketAddr,
     time::{Duration, Instant},
 };
+
+use bytes::Bytes;
+use serde::{Deserialize, Serialize};
 use strum::IntoStaticStr;
 use time::OffsetDateTime;
 use uuid::Uuid;

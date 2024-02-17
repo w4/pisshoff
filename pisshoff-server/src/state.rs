@@ -1,5 +1,6 @@
-use parking_lot::RwLock;
 use std::{borrow::Cow, collections::HashSet};
+
+use parking_lot::RwLock;
 
 #[derive(Default)]
 pub struct State {

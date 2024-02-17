@@ -1,6 +1,6 @@
-use crate::config::Config;
-pub use pisshoff_types::audit::*;
 use std::{io::ErrorKind, sync::Arc, time::Duration};
+
+pub use pisshoff_types::audit::*;
 use tokio::{
     fs::OpenOptions,
     io::{AsyncWriteExt, BufWriter},
@@ -8,6 +8,8 @@ use tokio::{
     task::JoinHandle,
 };
 use tracing::{debug, info};
+
+use crate::config::Config;
 
 pub fn start_audit_writer(
     config: Arc<Config>,

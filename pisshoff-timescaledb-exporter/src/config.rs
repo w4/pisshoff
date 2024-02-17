@@ -1,6 +1,7 @@
+use std::{io::ErrorKind, path::PathBuf, sync::Arc};
+
 use clap::Parser;
 use serde::{de::DeserializeOwned, Deserialize};
-use std::{io::ErrorKind, path::PathBuf, sync::Arc};
 
 /// Parser for command line arguments
 #[derive(Parser)]

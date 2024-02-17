@@ -1,5 +1,10 @@
 mod parser;
 
+use async_trait::async_trait;
+use pisshoff_types::audit::{AuditLogAction, ExecCommandEvent};
+use thrussh::{server::Session, ChannelId};
+use tracing::info;
+
 use crate::{
     command::{CommandResult, ConcreteCommand},
     server::{ConnectionState, EitherSession, StdoutCaptureSession},
@@ -8,10 +13,6 @@ use crate::{
         Subsystem,
     },
 };
-use async_trait::async_trait;
-use pisshoff_types::audit::{AuditLogAction, ExecCommandEvent};
-use thrussh::{server::Session, ChannelId};
-use tracing::info;
 
 pub const SHELL_PROMPT: &str = "bash-5.1$ ";
 

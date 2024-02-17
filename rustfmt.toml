@@ -1,0 +1,8 @@
+edition = "2021"
+unstable_features = true
+imports_granularity = "Crate"
+group_imports = "StdExternalCrate"
+normalize_comments = true
+comment_width = 100
+wrap_comments = true
+

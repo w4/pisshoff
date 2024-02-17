@@ -1,10 +1,12 @@
+use std::str::FromStr;
+
+use async_trait::async_trait;
+use thrussh::ChannelId;
+
 use crate::{
     command::{Command, CommandResult},
     server::{ConnectionState, ThrusshSession},
 };
-use async_trait::async_trait;
-use std::str::FromStr;
-use thrussh::ChannelId;
 
 #[derive(Debug, Clone)]
 pub struct Exit {}
@@ -39,11 +41,12 @@ impl Command for Exit {
 
 #[cfg(test)]
 mod test {
+    use test_case::test_case;
+
     use crate::{
         command::{exit::Exit, Command, CommandResult},
         server::{test::fake_channel_id, ConnectionState, MockThrusshSession},
     };
-    use test_case::test_case;
 
     #[test_case(&[], 0; "no parameters")]
     #[test_case(&["3"], 3; "with parameter")]
