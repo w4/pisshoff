@@ -1,3 +1,4 @@
+mod cat;
 mod echo;
 mod exit;
 mod ls;
@@ -6,12 +7,13 @@ mod scp;
 mod uname;
 mod whoami;
 
-use crate::server::{ConnectionState, ThrusshSession};
+use std::{borrow::Cow, fmt::Debug};
+
 use async_trait::async_trait;
 use itertools::Either;
-use std::borrow::Cow;
-use std::fmt::Debug;
 use thrussh::ChannelId;
+
+use crate::server::{ConnectionState, ThrusshSession};
 
 #[derive(Debug)]
 pub enum CommandResult<T> {
@@ -146,7 +148,8 @@ define_commands! {
     Pwd(pwd::Pwd) = b"pwd",
     Scp(scp::Scp) = b"scp",
     Uname(uname::Uname) = b"uname",
-    Whoami(whoami::Whoami) = b"whoami"
+    Whoami(whoami::Whoami) = b"whoami",
+    Cat(cat::Cat) = b"cat"
 }
 
 #[derive(Debug, Copy, Clone, PartialEq, Eq)]
@@ -170,8 +173,9 @@ fn argparse(args: &[String]) -> impl Iterator<Item = Arg<'_>> {
 
 #[cfg(test)]
 mod test {
-    use super::Arg;
     use test_case::test_case;
+
+    use super::Arg;
 
     #[test_case("-a", &[Arg::Short('a')]; "single short parameter")]
     #[test_case("-abc", &[Arg::Short('a'), Arg::Short('b'), Arg::Short('c')]; "multiple short parameter")]

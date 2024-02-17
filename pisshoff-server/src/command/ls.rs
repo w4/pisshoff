@@ -1,10 +1,12 @@
+use std::{fmt::Write, path::Path};
+
+use async_trait::async_trait;
+use thrussh::ChannelId;
+
 use crate::{
     command::{Command, CommandResult},
     server::{ConnectionState, ThrusshSession},
 };
-use async_trait::async_trait;
-use std::fmt::Write;
-use thrussh::ChannelId;
 
 #[derive(Debug, Clone)]
 pub struct Ls {}
@@ -17,33 +19,55 @@ impl Command for Ls {
         channel: ChannelId,
         session: &mut S,
     ) -> CommandResult<Self> {
+        let mut error = false;
+
         let resp = if params.is_empty() {
-            connection.file_system().ls(None).join("  ")
+            match connection.file_system().ls(None) {
+                Ok(v) => v.join("  "),
+                Err(e) => {
+                    error = true;
+                    format!("ls: {}: {e}", connection.file_system().pwd().display())
+                }
+            }
         } else if params.len() == 1 {
-            connection
+            match connection
                 .file_system()
-                .ls(Some(params.first().unwrap()))
-                .join("  ")
+                .ls(Some(Path::new(params.first().unwrap())))
+            {
+                Ok(v) => v.join("  "),
+                Err(e) => {
+                    error = true;
+                    format!("ls: {}: {e}", params.first().unwrap())
+                }
+            }
         } else {
             let mut out = String::new();
 
             for dir in params {
                 if !out.is_empty() {
-                    out.push_str("\n\n");
+                    out.push('\n');
                 }
 
-                write!(out, "{dir}:").unwrap();
-                out.push_str(&connection.file_system().ls(Some(dir)).join("  "));
+                match connection.file_system().ls(Some(Path::new(dir))) {
+                    Ok(v) => {
+                        write!(out, "{dir}:\n{}", v.join("  ")).unwrap();
+                    }
+                    Err(e) => {
+                        error = true;
+                        write!(out, "ls: {dir}: {e}").unwrap();
+                    }
+                }
             }
 
             out
         };
 
         if !resp.is_empty() {
+            let resp = resp.trim();
             session.data(channel, format!("{resp}\n").into());
         }
 
-        CommandResult::Exit(0)
+        CommandResult::Exit(u32::from(error))
     }
 
     async fn stdin<S: ThrusshSession + Send>(
@@ -59,6 +83,10 @@ impl Command for Ls {
 
 #[cfg(test)]
 mod test {
+    use std::path::Path;
+
+    use mockall::predicate::always;
+
     use crate::{
         command::{ls::Ls, Command, CommandResult},
         server::{
@@ -66,7 +94,6 @@ mod test {
             ConnectionState, MockThrusshSession,
         },
     };
-    use mockall::predicate::always;
 
     #[tokio::test]
     async fn empty_pwd() {
@@ -93,8 +120,12 @@ mod test {
             .with(always(), eq_string("a:\n\nb:\n"))
             .returning(|_, _| ());
 
+        let mut state = ConnectionState::mock();
+        state.file_system().mkdirall(Path::new("/root/a")).unwrap();
+        state.file_system().mkdirall(Path::new("/root/b")).unwrap();
+
         let out = Ls::new(
-            &mut ConnectionState::mock(),
+            &mut state,
             ["a".to_string(), "b".to_string()].as_slice(),
             fake_channel_id(),
             &mut session,
